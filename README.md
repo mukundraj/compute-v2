@@ -1,4 +1,4 @@
-# ds-container-v2
+# compute-v2
 
 A Podman container setup that runs JupyterLab and/or RStudio across two
 independent profiles (A and B), each with their own R and Python versions.
