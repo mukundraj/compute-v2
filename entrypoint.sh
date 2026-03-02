@@ -1,0 +1,49 @@
+#!/bin/bash
+set -e
+
+eval "$(micromamba shell hook -s bash)"
+micromamba activate dsenv
+
+echo "-----------------------------------------------------"
+echo "  Python: $(python --version 2>&1)"
+echo "  R:      $(R --version 2>&1 | head -1)"
+echo "  Node:   $(node --version 2>&1)"
+echo "-----------------------------------------------------"
+
+HOST_CLAUDE=$(which claude 2>/dev/null || echo "")
+if [ -z "$HOST_CLAUDE" ]; then
+    echo "WARNING: claude not found at /opt/npm-global/bin."
+    echo "         On host: npm install -g @anthropic-ai/claude-code"
+else
+    echo "Claude Code: $(claude --version 2>/dev/null || echo 'unknown')"
+fi
+
+case "$1" in
+  jupyter|jupyterlab)
+    echo "Starting JupyterLab on port 8888..."
+    exec jupyter lab \
+      --ip=0.0.0.0 \
+      --port=8888 \
+      --no-browser \
+      --allow-root \
+      --NotebookApp.token='' \
+      --NotebookApp.password=''
+    ;;
+  rstudio)
+    echo "Starting RStudio Server on port 8787..."
+    exec /init
+    ;;
+  claude|claude-code)
+    echo "Starting Claude Code..."
+    exec claude
+    ;;
+  bash|shell)
+    echo "Launching shell with dsenv activated..."
+    exec bash
+    ;;
+  *)
+    echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash]"
+    echo "Defaulting to JupyterLab..."
+    exec jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+    ;;
+esac
