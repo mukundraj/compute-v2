@@ -20,23 +20,33 @@ config.env
 ## Prerequisites
 
 - [Podman](https://podman.io/getting-started/installation)
-- [Node.js + npm](https://nodejs.org/) on the host
+- [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/) on the host
 - A Claude.ai Pro account
 
 ## Quick Start
 
+### 0. Install prerequisites
+
+```bash
+# Install Podman, Node.js, and pnpm (macOS via Homebrew)
+brew install podman node pnpm
+
+# Start the Podman VM
+podman machine init && podman machine start
+```
+
 ### 1. Install and authenticate Claude Code on the host
 
 ```bash
-npm install -g @anthropic-ai/claude-code
+pnpm add -g @anthropic-ai/claude-code
 claude   # choose: Login with Claude.ai → complete in browser
 ```
 
 ### 2. Configure config.env
 
 ```bash
-# Set your npm global prefix
-npm config get prefix   # copy this value into NPM_GLOBAL_PREFIX
+# Get your pnpm global prefix (parent of the bin directory)
+dirname $(pnpm bin -g)   # copy this value into NPM_GLOBAL_PREFIX
 
 # Edit config.env
 nano config.env
@@ -129,5 +139,5 @@ edit `run.sh` and change:
 Update on the host — all containers see it immediately:
 
 ```bash
-npm update -g @anthropic-ai/claude-code
+pnpm update -g @anthropic-ai/claude-code
 ```
