@@ -12,8 +12,8 @@ echo "-----------------------------------------------------"
 
 HOST_CLAUDE=$(which claude 2>/dev/null || echo "")
 if [ -z "$HOST_CLAUDE" ]; then
-    echo "WARNING: claude not found at /opt/npm-global/bin."
-    echo "         On host: npm install -g @anthropic-ai/claude-code"
+    echo "WARNING: claude not found at /opt/pnpm-global."
+    echo "         On host: pnpm add -g @anthropic-ai/claude-code"
 else
     echo "Claude Code: $(claude --version 2>/dev/null || echo 'unknown')"
 fi

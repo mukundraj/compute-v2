@@ -29,10 +29,9 @@ esac
 
 IMAGE="ds-env-r${R_VERSION}-py${PYTHON_VERSION}"
 COMMON_VOLUMES="-v ./work:/home/rstudio/work:Z \
-                -v ${NPM_GLOBAL_PREFIX}:/opt/npm-global:ro,Z \
+                -v ${PNPM_HOME}:/opt/pnpm-global:ro,Z \
                 -v ~/.claude:/root/.claude:ro,Z"
-COMMON_ENV="-e NPM_CONFIG_PREFIX=/opt/npm-global \
-            -e MAMBA_ROOT_PREFIX=/opt/conda"
+COMMON_ENV="-e MAMBA_ROOT_PREFIX=/opt/conda"
 
 echo "Profile $PROFILE: R=${R_VERSION} Python=${PYTHON_VERSION}"
 

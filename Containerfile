@@ -1,5 +1,5 @@
 ARG R_VERSION=4.3.2
-FROM rocker/tidyverse:${R_VERSION}
+FROM docker.io/rocker/tidyverse:${R_VERSION}
 
 # Re-declare after FROM (ARGs reset after each FROM)
 ARG R_VERSION=4.3.2
@@ -9,10 +9,10 @@ ARG PYTHON_VERSION=3.11
 ENV MAMBA_ROOT_PREFIX=/opt/conda
 ENV PATH=$MAMBA_ROOT_PREFIX/bin:$PATH
 
-RUN apt-get update && apt-get install -y curl bzip2 ca-certificates && \
+RUN apt-get update && apt-get install -y curl bzip2 ca-certificates libzmq3-dev && \
     curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
       | tar -xvj -C /usr/local/bin --strip-components=1 bin/micromamba && \
-    micromamba shell init -s bash -p $MAMBA_ROOT_PREFIX && \
+    micromamba shell init -s bash --root-prefix $MAMBA_ROOT_PREFIX && \
     micromamba config append channels conda-forge && \
     micromamba config append channels defaults && \
     micromamba config set channel_priority strict
@@ -31,12 +31,11 @@ RUN micromamba create -n dsenv -y \
 
 ENV PATH=$MAMBA_ROOT_PREFIX/envs/dsenv/bin:$PATH
 
-# ---------- Node.js (runtime only, Claude Code provided by host mount) ----------
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs
-
-ENV NPM_CONFIG_PREFIX=/opt/npm-global
-ENV PATH=/opt/npm-global/bin:$PATH
+# ---------- pnpm + Node.js (runtime only, Claude Code provided by host mount) ----------
+ENV PNPM_HOME=/usr/local/share/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN curl -fsSL https://get.pnpm.io/install.sh | SHELL=bash PNPM_HOME=$PNPM_HOME sh - && \
+    pnpm env use --global 20
 
 # ---------- IRkernel ----------
 RUN R -e "install.packages('IRkernel'); IRkernel::installspec(user=FALSE)"

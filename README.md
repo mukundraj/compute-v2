@@ -13,26 +13,40 @@ config.env
 ├── R_VERSION_A / R_VERSION_B
 ├── PYTHON_VERSION_A / PYTHON_VERSION_B
 ├── Ports for each profile
-├── NPM_GLOBAL_PREFIX
+├── PNPM_HOME
 └── RSTUDIO_PASSWORD
 ```
 
 ## Prerequisites
 
 - [Podman](https://podman.io/getting-started/installation)
-- [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/) on the host
+- [pnpm](https://pnpm.io/) on the host (manages Node.js via `pnpm env use`)
 - A Claude.ai Pro account
 
 ## Quick Start
 
 ### 0. Install prerequisites
 
+**Debian/Ubuntu:**
 ```bash
-# Install Podman, Node.js, and pnpm (macOS via Homebrew)
-brew install podman node pnpm
+# Podman
+sudo apt-get install -y podman
 
-# Start the Podman VM
+# pnpm (standalone installer — manages Node.js too)
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+source ~/.bashrc
+
+# Node.js (via pnpm)
+pnpm env use --global 20
+```
+
+**macOS (Homebrew):**
+```bash
+brew install podman pnpm
 podman machine init && podman machine start
+
+# Node.js (via pnpm)
+pnpm env use --global 20
 ```
 
 ### 1. Install and authenticate Claude Code on the host
@@ -45,10 +59,8 @@ claude   # choose: Login with Claude.ai → complete in browser
 ### 2. Configure config.env
 
 ```bash
-# Get your pnpm global prefix (parent of the bin directory)
-dirname $(pnpm bin -g)   # copy this value into NPM_GLOBAL_PREFIX
-
-# Edit config.env
+# PNPM_HOME is auto-detected via `pnpm bin -g` — only edit config.env for
+# passwords, ports, or R/Python versions
 nano config.env
 ```
 
