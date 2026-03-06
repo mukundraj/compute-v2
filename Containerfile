@@ -26,7 +26,10 @@ RUN micromamba create -n dsenv -y \
       numpy \
       pandas \
       matplotlib \
-      scikit-learn && \
+      scikit-learn \
+      google-cloud-sdk \
+      google-cloud-storage \
+      gcsfs && \
     micromamba clean --all --yes
 
 ENV PATH=$MAMBA_ROOT_PREFIX/envs/dsenv/bin:$PATH

@@ -35,6 +35,13 @@ COMMON_VOLUMES="-v ${WORK_DIR}:/home/rstudio/work:Z \
                 -v $HOME/.claude:/root/.claude:ro,Z"
 COMMON_ENV="-e MAMBA_ROOT_PREFIX=/opt/conda"
 
+# GCP credentials (optional) — auto-derived unless manually set in config.env
+if [ -z "${GCP_VOLUMES}" ] && [ -n "${GCP_SERVICE_ACCOUNT_KEY}" ]; then
+    KEY_PATH=$(eval echo "${GCP_SERVICE_ACCOUNT_KEY}")
+    GCP_VOLUMES="-v ${KEY_PATH}:/run/secrets/gcp-key.json:ro,Z"
+    GCP_ENV="-e GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp-key.json"
+fi
+
 echo "Profile $PROFILE: R=${R_VERSION} Python=${PYTHON_VERSION}"
 
 case "$SERVICE" in
@@ -44,6 +51,8 @@ case "$SERVICE" in
             -p ${JUPYTER_PORT}:8888 \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
+            ${GCP_VOLUMES} \
+            ${GCP_ENV} \
             --name ds-jupyter-${PROFILE} \
             ${IMAGE} jupyter
         ;;
@@ -53,6 +62,8 @@ case "$SERVICE" in
             -p ${RSTUDIO_PORT}:8787 \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
+            ${GCP_VOLUMES} \
+            ${GCP_ENV} \
             -e PASSWORD=${RSTUDIO_PASSWORD} \
             --name ds-rstudio-${PROFILE} \
             ${IMAGE} rstudio
@@ -62,6 +73,8 @@ case "$SERVICE" in
         podman run -it --rm \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
+            ${GCP_VOLUMES} \
+            ${GCP_ENV} \
             --name ds-claude-${PROFILE} \
             ${IMAGE} claude
         ;;
@@ -70,6 +83,8 @@ case "$SERVICE" in
         podman run -it --rm \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
+            ${GCP_VOLUMES} \
+            ${GCP_ENV} \
             --name ds-bash-${PROFILE} \
             ${IMAGE} bash
         ;;
