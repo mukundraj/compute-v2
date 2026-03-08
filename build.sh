@@ -12,6 +12,7 @@ build_image() {
 
     echo "Building $TAG..."
     podman build \
+        --platform linux/amd64 \
         --build-arg R_VERSION=${R_VERSION} \
         --build-arg PYTHON_VERSION=${PYTHON_VERSION} \
         -f Containerfile \
