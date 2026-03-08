@@ -35,7 +35,7 @@ COMMON_VOLUMES="-v ${WORK_DIR}:${WORK_MOUNT}:Z \
                 -v $HOME/.claude:/root/.claude:ro,Z \
                 -v $HOME/.claude.json:/root/.claude.json:ro,Z \
                 -v ${SCRIPT_DIR}/templates/CLAUDE.md:${WORK_MOUNT}/CLAUDE.md:ro,Z"
-COMMON_ENV="-e MAMBA_ROOT_PREFIX=/opt/conda"
+COMMON_ENV="-e MAMBA_ROOT_PREFIX=/opt/conda -e WORK_MOUNT=${WORK_MOUNT}"
 
 # Detect Claude Code installation — prefer pnpm/npm (Node.js scripts, Linux-compatible)
 # over standalone native binary (macOS-only, won't run in Linux container)

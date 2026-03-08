@@ -35,10 +35,13 @@ case "$1" in
       --ip=0.0.0.0 \
       --port=8888 \
       --no-browser \
-      --allow-root
+      --allow-root \
+      --notebook-dir="${WORK_MOUNT:-/home/workdir}"
     ;;
   rstudio)
     echo "Starting RStudio Server on port 8787..."
+    mkdir -p /etc/rstudio
+    echo "session-default-working-dir=${WORK_MOUNT:-/home/workdir}" >> /etc/rstudio/rsession.conf
     exec /init
     ;;
   claude|claude-code)
