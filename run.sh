@@ -30,7 +30,7 @@ esac
 IMAGE="ds-env-r${R_VERSION}-py${PYTHON_VERSION}"
 mkdir -p "${WORK_DIR}"
 mkdir -p "$HOME/.claude"
-COMMON_VOLUMES="-v ${WORK_DIR}:/home/rstudio/work:Z \
+COMMON_VOLUMES="-v ${WORK_DIR}:${WORK_MOUNT}:Z \
                 -v ${PNPM_HOME}:/opt/pnpm-global:ro,Z \
                 -v $HOME/.claude:/root/.claude:ro,Z"
 COMMON_ENV="-e MAMBA_ROOT_PREFIX=/opt/conda"
@@ -69,6 +69,7 @@ case "$SERVICE" in
             ${COMMON_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
+            -e JUPYTER_PASSWORD=$(whoami) \
             --name ds-jupyter-${PROFILE} \
             ${IMAGE} jupyter
         ;;
@@ -80,7 +81,7 @@ case "$SERVICE" in
             ${COMMON_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
-            -e PASSWORD=${RSTUDIO_PASSWORD} \
+            -e PASSWORD=$(whoami) \
             --name ds-rstudio-${PROFILE} \
             ${IMAGE} rstudio
         ;;

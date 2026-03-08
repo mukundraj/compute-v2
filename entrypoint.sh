@@ -21,13 +21,16 @@ fi
 case "$1" in
   jupyter|jupyterlab)
     echo "Starting JupyterLab on port 8888..."
+    python -c \
+      "import os, json; from jupyter_server.auth import passwd; \
+      os.makedirs('/root/.jupyter', exist_ok=True); \
+      json.dump({'ServerApp': {'password': passwd(os.environ['JUPYTER_PASSWORD']), 'token': ''}}, \
+      open('/root/.jupyter/jupyter_server_config.json', 'w'))"
     exec jupyter lab \
       --ip=0.0.0.0 \
       --port=8888 \
       --no-browser \
-      --allow-root \
-      --NotebookApp.token='' \
-      --NotebookApp.password=''
+      --allow-root
     ;;
   rstudio)
     echo "Starting RStudio Server on port 8787..."
