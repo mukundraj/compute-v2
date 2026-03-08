@@ -56,6 +56,17 @@ pnpm add -g @anthropic-ai/claude-code
 claude   # choose: Login with Claude.ai → complete in browser
 ```
 
+After authenticating, install the provided global CLAUDE.md so that GCS access
+restrictions are enforced in every Claude Code session inside containers:
+
+```bash
+cp templates/CLAUDE.md ~/.claude/CLAUDE.md
+```
+
+This file instructs Claude to respect `GCS_READ_PATHS` and `GCS_WRITE_PATHS`
+(set via `GCP_BUCKET_ACCESS` in `config.env`) and refuse any GCS operation
+outside those declared paths.
+
 ### 2. Configure config.env
 
 ```bash

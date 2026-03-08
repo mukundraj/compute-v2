@@ -42,6 +42,22 @@ if [ -z "${GCP_VOLUMES}" ] && [ -n "${GCP_SERVICE_ACCOUNT_KEY}" ]; then
     GCP_ENV="-e GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp-key.json"
 fi
 
+# GCP bucket access (optional) — parse GCP_BUCKET_ACCESS into GCS_READ_PATHS / GCS_WRITE_PATHS
+if [ -n "${GCP_BUCKET_ACCESS}" ]; then
+    GCS_READ_PATHS=""
+    GCS_WRITE_PATHS=""
+    for entry in ${GCP_BUCKET_ACCESS}; do
+        path="${entry%:*}"
+        mode="${entry##*:}"
+        case "$mode" in
+            ro) GCS_READ_PATHS="${GCS_READ_PATHS:+$GCS_READ_PATHS }$path" ;;
+            rw) GCS_READ_PATHS="${GCS_READ_PATHS:+$GCS_READ_PATHS }$path"
+                GCS_WRITE_PATHS="${GCS_WRITE_PATHS:+$GCS_WRITE_PATHS }$path" ;;
+        esac
+    done
+    GCP_ENV="${GCP_ENV} -e GCS_READ_PATHS=${GCS_READ_PATHS} -e GCS_WRITE_PATHS=${GCS_WRITE_PATHS}"
+fi
+
 echo "Profile $PROFILE: R=${R_VERSION} Python=${PYTHON_VERSION}"
 
 case "$SERVICE" in
