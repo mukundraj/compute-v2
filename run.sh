@@ -28,12 +28,32 @@ case "$PROFILE" in
 esac
 
 IMAGE="ds-env-r${R_VERSION}-py${PYTHON_VERSION}"
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "${WORK_DIR}"
 mkdir -p "$HOME/.claude"
 COMMON_VOLUMES="-v ${WORK_DIR}:${WORK_MOUNT}:Z \
-                -v ${PNPM_HOME}:/opt/pnpm-global:ro,Z \
-                -v $HOME/.claude:/root/.claude:ro,Z"
+                -v $HOME/.claude:/root/.claude:ro,Z \
+                -v $HOME/.claude.json:/root/.claude.json:ro,Z \
+                -v ${SCRIPT_DIR}/templates/CLAUDE.md:${WORK_MOUNT}/CLAUDE.md:ro,Z"
 COMMON_ENV="-e MAMBA_ROOT_PREFIX=/opt/conda"
+
+# Detect Claude Code installation — prefer pnpm/npm (Node.js scripts, Linux-compatible)
+# over standalone native binary (macOS-only, won't run in Linux container)
+CLAUDE_VOLUME=""
+CLAUDE_ENV=""
+_set_claude() {
+    local bin="$1"
+    [ -x "$bin" ] || return 1
+    local real dir
+    real=$(realpath "$bin" 2>/dev/null || readlink -f "$bin" 2>/dev/null || echo "$bin")
+    dir=$(dirname "$real")
+    CLAUDE_VOLUME="-v ${dir}:/opt/claude-bin:ro,Z"
+    CLAUDE_ENV="-e CLAUDE_BIN=/opt/claude-bin/$(basename "$real")"
+}
+_set_claude "$(pnpm bin -g 2>/dev/null)/claude" ||
+_set_claude "$(npm config get prefix 2>/dev/null)/bin/claude" ||
+{ _claude_which=$(which claude 2>/dev/null) && _set_claude "$_claude_which"; } ||
+true
 
 # GCP credentials (optional) — auto-derived unless manually set in config.env
 if [ -z "${GCP_VOLUMES}" ] && [ -n "${GCP_SERVICE_ACCOUNT_KEY}" ]; then
@@ -67,6 +87,8 @@ case "$SERVICE" in
             -p ${JUPYTER_PORT}:8888 \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
+            ${CLAUDE_VOLUME} \
+            ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
             -e JUPYTER_PASSWORD=$(whoami) \
@@ -79,6 +101,8 @@ case "$SERVICE" in
             -p ${RSTUDIO_PORT}:8787 \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
+            ${CLAUDE_VOLUME} \
+            ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
             -e PASSWORD=$(whoami) \
@@ -90,6 +114,8 @@ case "$SERVICE" in
         podman run -it --rm \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
+            ${CLAUDE_VOLUME} \
+            ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
             --name ds-claude-${PROFILE} \
@@ -100,6 +126,8 @@ case "$SERVICE" in
         podman run -it --rm \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
+            ${CLAUDE_VOLUME} \
+            ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
             --name ds-bash-${PROFILE} \

@@ -10,12 +10,17 @@ echo "  R:      $(R --version 2>&1 | head -1)"
 echo "  Node:   $(node --version 2>&1)"
 echo "-----------------------------------------------------"
 
-HOST_CLAUDE=$(which claude 2>/dev/null || echo "")
-if [ -z "$HOST_CLAUDE" ]; then
-    echo "WARNING: claude not found at /opt/pnpm-global."
-    echo "         On host: pnpm add -g @anthropic-ai/claude-code"
+# Locate claude: prefer CLAUDE_BIN env var (set by run.sh), then fall back to PATH
+if [ -n "$CLAUDE_BIN" ] && [ -x "$CLAUDE_BIN" ]; then
+    HOST_CLAUDE="$CLAUDE_BIN"
+    export PATH="$(dirname "$CLAUDE_BIN"):$PATH"
 else
-    echo "Claude Code: $(claude --version 2>/dev/null || echo 'unknown')"
+    HOST_CLAUDE=$(which claude 2>/dev/null || echo "")
+fi
+if [ -z "$HOST_CLAUDE" ]; then
+    echo "WARNING: claude not found. On host: install via standalone, npm, or pnpm."
+else
+    echo "Claude Code: $($HOST_CLAUDE --version 2>/dev/null || echo 'unknown')"
 fi
 
 case "$1" in
@@ -38,7 +43,7 @@ case "$1" in
     ;;
   claude|claude-code)
     echo "Starting Claude Code..."
-    exec claude
+    exec "${HOST_CLAUDE:-claude}"
     ;;
   bash|shell)
     echo "Launching shell with dsenv activated..."
