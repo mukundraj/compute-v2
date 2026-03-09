@@ -2,7 +2,22 @@
 set -e
 
 eval "$(micromamba shell hook -s bash)"
-micromamba activate dsenv
+
+# First-run: if conda-envs dir is mounted but denv doesn't exist, recreate it
+if [ ! -x /opt/conda/envs/denv/bin/R ]; then
+    echo "First run: creating denv (this takes a few minutes)..."
+    micromamba create -n denv -y \
+        r-base="${R_VERSION}" \
+        r-tidyverse r-irkernel \
+        python="${PYTHON_VERSION}" \
+        jupyterlab notebook ipykernel numpy pandas matplotlib scikit-learn \
+        google-cloud-sdk google-cloud-storage gcsfs
+    micromamba run -n denv python -m ipykernel install \
+        --name denv --display-name "Python (denv)" --sys-prefix
+    micromamba run -n denv Rscript -e "IRkernel::installspec(user=FALSE)"
+fi
+
+micromamba activate denv
 
 echo "-----------------------------------------------------"
 echo "  Python: $(python --version 2>&1)"
@@ -49,7 +64,7 @@ case "$1" in
     exec "${HOST_CLAUDE:-claude}"
     ;;
   bash|shell)
-    echo "Launching shell with dsenv activated..."
+    echo "Launching shell with denv activated..."
     exec bash
     ;;
   *)

@@ -27,6 +27,19 @@ case "$PROFILE" in
         ;;
 esac
 
+# Persistent packages directory (optional)
+PACKAGES_VOLUMES=""
+PACKAGES_ENV=""
+if [ -n "${PACKAGES_DIR}" ]; then
+    PKG_DIR=$(eval echo "${PACKAGES_DIR}/${PROFILE}")
+    mkdir -p "${PKG_DIR}/r-libs"
+    # r-libs: bind mount (plain file writes, works fine on macOS/virtiofs)
+    # conda-envs: named volume (micromamba needs a native Linux fs; virtiofs causes permission errors)
+    PACKAGES_VOLUMES="-v ${PKG_DIR}/r-libs:/opt/r-libs:Z \
+                      -v ds-conda-envs-${PROFILE}:/opt/conda/envs"
+    PACKAGES_ENV="-e R_LIBS_USER=/opt/r-libs"
+fi
+
 IMAGE="ds-env-r${R_VERSION}-py${PYTHON_VERSION}"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "${WORK_DIR}"
@@ -91,6 +104,8 @@ case "$SERVICE" in
             ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
+            ${PACKAGES_VOLUMES} \
+            ${PACKAGES_ENV} \
             -e JUPYTER_PASSWORD=$(whoami) \
             --name ds-jupyter-${PROFILE} \
             ${IMAGE} jupyter
@@ -105,6 +120,8 @@ case "$SERVICE" in
             ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
+            ${PACKAGES_VOLUMES} \
+            ${PACKAGES_ENV} \
             -e PASSWORD=$(whoami) \
             --name ds-rstudio-${PROFILE} \
             ${IMAGE} rstudio
@@ -118,6 +135,8 @@ case "$SERVICE" in
             ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
+            ${PACKAGES_VOLUMES} \
+            ${PACKAGES_ENV} \
             --name ds-claude-${PROFILE} \
             ${IMAGE} claude
         ;;
@@ -130,6 +149,8 @@ case "$SERVICE" in
             ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
+            ${PACKAGES_VOLUMES} \
+            ${PACKAGES_ENV} \
             --name ds-bash-${PROFILE} \
             ${IMAGE} bash
         ;;
