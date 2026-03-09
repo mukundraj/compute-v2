@@ -31,9 +31,18 @@ else
     echo "WARNING: claude not found inside image."
 fi
 
+# Forward GCP credentials to all services (terminals + R sessions)
+if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+    echo "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /opt/conda/envs/denv/lib/R/etc/Renviron.site
+    echo "export GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /etc/profile.d/z-gcp.sh
+    gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}" 2>/dev/null || true
+fi
+
 case "$1" in
   jupyter|jupyterlab)
     echo "Starting JupyterLab on port 8888..."
+    export SHELL=/bin/bash
+    echo "cd ${WORK_MOUNT:-/home/workdir}" >> /root/.bashrc
     python -c \
       "import os, json; from jupyter_server.auth import passwd; \
       os.makedirs('/root/.jupyter', exist_ok=True); \
@@ -50,12 +59,6 @@ case "$1" in
     echo "Starting RStudio Server on port 8787..."
     mkdir -p /etc/rstudio
     echo "session-default-working-dir=${WORK_MOUNT:-/home/workdir}" >> /etc/rstudio/rsession.conf
-    # Forward container env vars to R sessions and terminal (RStudio Server doesn't inherit them)
-    if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
-        echo "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /opt/conda/envs/denv/lib/R/etc/Renviron.site
-        echo "export GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /etc/profile.d/z-gcp.sh
-        gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}" 2>/dev/null || true
-    fi
     exec /init
     ;;
   claude|claude-code)
