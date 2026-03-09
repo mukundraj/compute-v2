@@ -36,6 +36,9 @@ if [ -z "$HOST_CLAUDE" ]; then
     echo "WARNING: claude not found. On host: install via standalone, npm, or pnpm."
 else
     echo "Claude Code: $($HOST_CLAUDE --version 2>/dev/null || echo 'unknown')"
+    # Wrapper script (not symlink) so the shim's $0-based basedir resolves correctly
+    printf '#!/bin/sh\nexec "%s" "$@"\n' "$HOST_CLAUDE" > /usr/local/bin/claude
+    chmod +x /usr/local/bin/claude
 fi
 
 case "$1" in

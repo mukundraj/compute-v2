@@ -45,8 +45,8 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "${WORK_DIR}"
 mkdir -p "$HOME/.claude"
 COMMON_VOLUMES="-v ${WORK_DIR}:${WORK_MOUNT}:Z \
-                -v $HOME/.claude:/root/.claude:ro,Z \
-                -v $HOME/.claude.json:/root/.claude.json:ro,Z \
+                -v $HOME/.claude:/root/.claude:Z \
+                -v $HOME/.claude.json:/root/.claude.json:Z \
                 -v ${SCRIPT_DIR}/templates/CLAUDE.md:${WORK_MOUNT}/CLAUDE.md:ro,Z"
 COMMON_ENV="-e MAMBA_ROOT_PREFIX=/opt/conda -e WORK_MOUNT=${WORK_MOUNT}"
 
@@ -57,11 +57,21 @@ CLAUDE_ENV=""
 _set_claude() {
     local bin="$1"
     [ -x "$bin" ] || return 1
-    local real dir
+    local real
     real=$(realpath "$bin" 2>/dev/null || readlink -f "$bin" 2>/dev/null || echo "$bin")
-    dir=$(dirname "$real")
-    CLAUDE_VOLUME="-v ${dir}:/opt/claude-bin:ro,Z"
-    CLAUDE_ENV="-e CLAUDE_BIN=/opt/claude-bin/$(basename "$real")"
+    if [[ "$real" == *"/.pnpm/"* ]]; then
+        # pnpm virtual store: shims contain hardcoded absolute paths (e.g.
+        # require('/path/to/global/5/.pnpm/.../cli.js')).  Mount the versioned
+        # global root (everything before /.pnpm/) at the same host path so those
+        # paths resolve correctly inside the container.
+        local global_root="${real%%/.pnpm/*}"
+        CLAUDE_VOLUME="-v ${global_root}:${global_root}:ro,Z"
+        CLAUDE_ENV="-e CLAUDE_BIN=${real}"
+    else
+        # npm global or standalone binary: mount the binary's directory
+        CLAUDE_VOLUME="-v $(dirname "$real"):/opt/claude-bin:ro,Z"
+        CLAUDE_ENV="-e CLAUDE_BIN=/opt/claude-bin/$(basename "$real")"
+    fi
 }
 _set_claude "$(pnpm bin -g 2>/dev/null)/claude" ||
 _set_claude "$(npm config get prefix 2>/dev/null)/bin/claude" ||
