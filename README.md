@@ -2,7 +2,7 @@
 
 A Podman container setup that runs JupyterLab and/or RStudio across two
 independent profiles (A and B), each with their own R and Python versions.
-Claude Code is provided via host mount. All configuration lives in one file.
+Claude Code is installed inside the image. All configuration lives in one file.
 
 ## Single source of truth
 
@@ -12,15 +12,12 @@ Edit **only** `config.env` to change any version or setting:
 config.env
 ├── R_VERSION_A / R_VERSION_B
 ├── PYTHON_VERSION_A / PYTHON_VERSION_B
-├── Ports for each profile
-├── PNPM_HOME
-└── RSTUDIO_PASSWORD
+└── Ports for each profile
 ```
 
 ## Prerequisites
 
 - [Podman](https://podman.io/getting-started/installation)
-- [pnpm](https://pnpm.io/) on the host (manages Node.js via `pnpm env use`)
 - A Claude.ai Pro account
 
 ## Quick Start
@@ -29,59 +26,30 @@ config.env
 
 **Debian/Ubuntu:**
 ```bash
-# Podman
 sudo apt-get install -y podman
-
-# pnpm (standalone installer — manages Node.js too)
-curl -fsSL https://get.pnpm.io/install.sh | sh -
-source ~/.bashrc
-
-# Node.js (via pnpm)
-pnpm env use --global 20
 ```
 
 **macOS (Homebrew):**
 ```bash
-brew install podman pnpm
+brew install podman
 podman machine init && podman machine start
-
-# Node.js (via pnpm)
-pnpm env use --global 20
 ```
 
-### 1. Install and authenticate Claude Code on the host
+### 1. Configure config.env
 
 ```bash
-pnpm add -g @anthropic-ai/claude-code
-claude   # choose: Login with Claude.ai → complete in browser
+nano config.env   # set R/Python versions and ports
 ```
 
-After authenticating, install the provided global CLAUDE.md so that GCS access
-restrictions are enforced in every Claude Code session inside containers:
-
-```bash
-cp templates/CLAUDE.md ~/.claude/CLAUDE.md
-```
-
-This file instructs Claude to respect `GCS_READ_PATHS` and `GCS_WRITE_PATHS`
-(set via `GCP_BUCKET_ACCESS` in `config.env`) and refuse any GCS operation
-outside those declared paths.
-
-### 2. Configure config.env
-
-```bash
-# PNPM_HOME is auto-detected via `pnpm bin -g` — only edit config.env for
-# passwords, ports, or R/Python versions
-nano config.env
-```
-
-### 3. Make scripts executable
+### 2. Make scripts executable
 
 ```bash
 chmod +x build.sh run.sh stop.sh status.sh
 ```
 
-### 4. Build images
+### 3. Build images
+
+> Claude Code is baked into the image at build time. Rebuilding is the way to update it.
 
 ```bash
 ./build.sh all   # builds both profiles
@@ -89,7 +57,7 @@ chmod +x build.sh run.sh stop.sh status.sh
 ./build.sh b     # builds profile B only
 ```
 
-### 5. Run
+### 4. Run
 
 ```bash
 # Single profile
@@ -109,7 +77,11 @@ chmod +x build.sh run.sh stop.sh status.sh
 ./run.sh a bash
 ```
 
-### 6. Monitor and stop
+> **First-time Claude login:** Claude Code's config is stored in a named Podman volume
+> (`ds-claude-config-<profile>`), isolated from the host. Run `/login` once inside the
+> container to authenticate. Auth persists across restarts.
+
+### 5. Monitor and stop
 
 ```bash
 ./status.sh      # show running containers, images, and port map
@@ -193,8 +165,11 @@ edit `run.sh` and change:
 
 ## Updating Claude Code
 
-Update on the host — all containers see it immediately:
+Claude Code is baked into the image. To update, rebuild:
 
 ```bash
-pnpm update -g @anthropic-ai/claude-code
+./build.sh all
 ```
+
+The Claude Code install is near the end of the Containerfile, so only the last
+few layers rebuild — this is fast (seconds, not minutes).
