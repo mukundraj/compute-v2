@@ -43,40 +43,10 @@ fi
 IMAGE="ds-env-r${R_VERSION}-py${PYTHON_VERSION}"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "${WORK_DIR}"
-mkdir -p "$HOME/.claude"
 COMMON_VOLUMES="-v ${WORK_DIR}:${WORK_MOUNT}:Z \
-                -v $HOME/.claude:/root/.claude:Z \
-                -v $HOME/.claude.json:/root/.claude.json:Z \
+                -v ds-claude-config-${PROFILE}:/root/.claude \
                 -v ${SCRIPT_DIR}/templates/CLAUDE.md:${WORK_MOUNT}/CLAUDE.md:ro,Z"
 COMMON_ENV="-e MAMBA_ROOT_PREFIX=/opt/conda -e WORK_MOUNT=${WORK_MOUNT}"
-
-# Detect Claude Code installation — prefer pnpm/npm (Node.js scripts, Linux-compatible)
-# over standalone native binary (macOS-only, won't run in Linux container)
-CLAUDE_VOLUME=""
-CLAUDE_ENV=""
-_set_claude() {
-    local bin="$1"
-    [ -x "$bin" ] || return 1
-    local real
-    real=$(realpath "$bin" 2>/dev/null || readlink -f "$bin" 2>/dev/null || echo "$bin")
-    if [[ "$real" == *"/.pnpm/"* ]]; then
-        # pnpm virtual store: shims contain hardcoded absolute paths (e.g.
-        # require('/path/to/global/5/.pnpm/.../cli.js')).  Mount the versioned
-        # global root (everything before /.pnpm/) at the same host path so those
-        # paths resolve correctly inside the container.
-        local global_root="${real%%/.pnpm/*}"
-        CLAUDE_VOLUME="-v ${global_root}:${global_root}:ro,Z"
-        CLAUDE_ENV="-e CLAUDE_BIN=${real}"
-    else
-        # npm global or standalone binary: mount the binary's directory
-        CLAUDE_VOLUME="-v $(dirname "$real"):/opt/claude-bin:ro,Z"
-        CLAUDE_ENV="-e CLAUDE_BIN=/opt/claude-bin/$(basename "$real")"
-    fi
-}
-_set_claude "$(pnpm bin -g 2>/dev/null)/claude" ||
-_set_claude "$(npm config get prefix 2>/dev/null)/bin/claude" ||
-{ _claude_which=$(which claude 2>/dev/null) && _set_claude "$_claude_which"; } ||
-true
 
 # GCP credentials (optional) — auto-derived unless manually set in config.env
 if [ -z "${GCP_VOLUMES}" ] && [ -n "${GCP_SERVICE_ACCOUNT_KEY}" ]; then
@@ -110,8 +80,6 @@ case "$SERVICE" in
             -p ${JUPYTER_PORT}:8888 \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
-            ${CLAUDE_VOLUME} \
-            ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
             ${PACKAGES_VOLUMES} \
@@ -126,8 +94,6 @@ case "$SERVICE" in
             -p ${RSTUDIO_PORT}:8787 \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
-            ${CLAUDE_VOLUME} \
-            ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
             ${PACKAGES_VOLUMES} \
@@ -141,8 +107,6 @@ case "$SERVICE" in
         podman run -it --rm \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
-            ${CLAUDE_VOLUME} \
-            ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
             ${PACKAGES_VOLUMES} \
@@ -155,8 +119,6 @@ case "$SERVICE" in
         podman run -it --rm \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
-            ${CLAUDE_VOLUME} \
-            ${CLAUDE_ENV} \
             ${GCP_VOLUMES} \
             ${GCP_ENV} \
             ${PACKAGES_VOLUMES} \

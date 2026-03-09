@@ -40,7 +40,7 @@ RUN micromamba create -n denv -y \
 ENV PATH=$MAMBA_ROOT_PREFIX/envs/denv/bin:$PATH
 ENV LD_LIBRARY_PATH=$MAMBA_ROOT_PREFIX/envs/denv/lib
 
-# ---------- pnpm + Node.js (runtime only, Claude Code provided by host mount) ----------
+# ---------- pnpm + Node.js ----------
 ENV PNPM_HOME=/usr/local/share/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN curl -fsSL https://get.pnpm.io/install.sh | SHELL=bash PNPM_HOME=$PNPM_HOME sh - && \
@@ -57,6 +57,9 @@ RUN printf 'export PATH=/opt/conda/envs/denv/bin:/opt/conda/bin:$PATH\nexport LD
         > /etc/profile.d/z-conda-denv.sh && \
     printf 'export PATH=/opt/conda/envs/denv/bin:/opt/conda/bin:$PATH\nexport LD_LIBRARY_PATH=/opt/conda/envs/denv/lib:$LD_LIBRARY_PATH\n' \
         >> /etc/bash.bashrc
+
+# ---------- Claude Code (last so version bumps rebuild only this layer) ----------
+RUN pnpm add -g @anthropic-ai/claude-code
 
 # ---------- entrypoint ----------
 COPY entrypoint.sh /entrypoint.sh
