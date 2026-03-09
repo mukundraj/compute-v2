@@ -50,6 +50,12 @@ case "$1" in
     echo "Starting RStudio Server on port 8787..."
     mkdir -p /etc/rstudio
     echo "session-default-working-dir=${WORK_MOUNT:-/home/workdir}" >> /etc/rstudio/rsession.conf
+    # Forward container env vars to R sessions and terminal (RStudio Server doesn't inherit them)
+    if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+        echo "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /opt/conda/envs/denv/lib/R/etc/Renviron.site
+        echo "export GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /etc/profile.d/z-gcp.sh
+        gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}" 2>/dev/null || true
+    fi
     exec /init
     ;;
   claude|claude-code)
