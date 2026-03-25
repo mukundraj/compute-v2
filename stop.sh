@@ -13,13 +13,14 @@ set +a
 
 case "${1:-all}" in
     a)
-        podman stop ds-jupyter-a ds-rstudio-a 2>/dev/null || true
+        podman stop ds-jupyter-a ds-rstudio-a ds-vscode-a ds-claude-a ds-bash-a 2>/dev/null || true
         ;;
     b)
-        podman stop ds-jupyter-b ds-rstudio-b 2>/dev/null || true
+        podman stop ds-jupyter-b ds-rstudio-b ds-vscode-b ds-claude-b ds-bash-b 2>/dev/null || true
         ;;
     all)
-        podman stop ds-jupyter-a ds-rstudio-a ds-jupyter-b ds-rstudio-b 2>/dev/null || true
+        podman stop ds-jupyter-a ds-rstudio-a ds-vscode-a ds-claude-a ds-bash-a \
+                     ds-jupyter-b ds-rstudio-b ds-vscode-b ds-claude-b ds-bash-b 2>/dev/null || true
         ;;
     *)
         echo "Usage: ./stop.sh [a|b|all]"
