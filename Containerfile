@@ -7,7 +7,7 @@ ARG PYTHON_VERSION=3.11
 ENV R_VERSION=${R_VERSION}
 ENV PYTHON_VERSION=${PYTHON_VERSION}
 
-# ---------- micromamba ----------
+# ---------- micromamba (Python only) ----------
 ENV MAMBA_ROOT_PREFIX=/opt/conda
 ENV PATH=$MAMBA_ROOT_PREFIX/bin:$PATH
 
@@ -19,44 +19,48 @@ RUN apt-get update && apt-get install -y curl bzip2 ca-certificates libzmq3-dev 
     micromamba config set channel_priority strict && \
     micromamba config set always_copy true
 
-# ---------- environment (R + Python) ----------
+# ---------- Python environment ----------
 RUN micromamba create -n denv -y \
-      r-base=${R_VERSION} \
-      r-tidyverse \
-      r-irkernel \
-      python=${PYTHON_VERSION} \
+      python=${PYTHON_VERSION} && \
+    micromamba clean --all --yes
+
+RUN micromamba install -n denv -y \
       jupyterlab \
       notebook \
       ipykernel \
       numpy \
       pandas \
       matplotlib \
-      scikit-learn \
+      scikit-learn && \
+    micromamba clean --all --yes
+
+RUN micromamba install -n denv -y \
       google-cloud-sdk \
       google-cloud-storage \
       gcsfs && \
     micromamba clean --all --yes
 
 ENV PATH=$MAMBA_ROOT_PREFIX/envs/denv/bin:$PATH
-ENV LD_LIBRARY_PATH=$MAMBA_ROOT_PREFIX/envs/denv/lib
+
+# ---------- R packages (using rocker's system R) ----------
+RUN Rscript -e "install.packages(c('tidyverse', 'IRkernel'), repos='https://p3m.dev/cran/__linux__/jammy/latest')"
+
+# ---------- kernel specs ----------
+RUN micromamba run -n denv python -m ipykernel install \
+      --name denv --display-name "Python (denv)" --sys-prefix && \
+    Rscript -e "IRkernel::installspec(user=FALSE, prefix='/opt/conda/envs/denv')"
+
+# ---------- ensure terminal sessions use conda Python ----------
+RUN printf 'export PATH=/opt/conda/envs/denv/bin:/opt/conda/bin:$PATH\n' \
+        > /etc/profile.d/z-conda-denv.sh && \
+    printf 'export PATH=/opt/conda/envs/denv/bin:/opt/conda/bin:$PATH\n' \
+        >> /etc/bash.bashrc
 
 # ---------- pnpm + Node.js ----------
 ENV PNPM_HOME=/usr/local/share/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN curl -fsSL https://get.pnpm.io/install.sh | SHELL=bash PNPM_HOME=$PNPM_HOME sh - && \
     pnpm env use --global 20
-
-# ---------- kernel specs ----------
-RUN micromamba run -n denv Rscript -e "IRkernel::installspec(user=FALSE)"
-
-# ---------- point RStudio at conda R ----------
-RUN sed -i 's|^rsession-which-r=.*|rsession-which-r=/opt/conda/envs/denv/bin/R|' /etc/rstudio/rserver.conf
-
-# ---------- ensure terminal sessions use conda R ----------
-RUN printf 'export PATH=/opt/conda/envs/denv/bin:/opt/conda/bin:$PATH\nexport LD_LIBRARY_PATH=/opt/conda/envs/denv/lib:$LD_LIBRARY_PATH\n' \
-        > /etc/profile.d/z-conda-denv.sh && \
-    printf 'export PATH=/opt/conda/envs/denv/bin:/opt/conda/bin:$PATH\nexport LD_LIBRARY_PATH=/opt/conda/envs/denv/lib:$LD_LIBRARY_PATH\n' \
-        >> /etc/bash.bashrc
 
 # ---------- Claude Code (last so version bumps rebuild only this layer) ----------
 RUN pnpm add -g @anthropic-ai/claude-code

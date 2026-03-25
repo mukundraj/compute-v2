@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Ensure XDG_RUNTIME_DIR exists and is writable (needed for rootless Podman on headless Linux)
+if [[ "$(uname)" == "Linux" ]] && [ ! -w "${XDG_RUNTIME_DIR:-}" ]; then
+    export XDG_RUNTIME_DIR="$HOME/.podman-data/runtime"
+    mkdir -p "$XDG_RUNTIME_DIR"
+fi
+
 set -a
 source config.env
 set +a
@@ -77,7 +83,7 @@ case "$SERVICE" in
     jupyter)
         echo "Starting JupyterLab → http://localhost:${JUPYTER_PORT}"
         podman run -it --rm \
-            -p ${JUPYTER_PORT}:8888 \
+            -p 0.0.0.0:${JUPYTER_PORT}:8888 \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
             ${GCP_VOLUMES} \
@@ -91,7 +97,7 @@ case "$SERVICE" in
     rstudio)
         echo "Starting RStudio → http://localhost:${RSTUDIO_PORT}"
         podman run -it --rm \
-            -p ${RSTUDIO_PORT}:8787 \
+            -p 0.0.0.0:${RSTUDIO_PORT}:8787 \
             ${COMMON_VOLUMES} \
             ${COMMON_ENV} \
             ${GCP_VOLUMES} \

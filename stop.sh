@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Ensure XDG_RUNTIME_DIR exists and is writable (needed for rootless Podman on headless Linux)
+if [[ "$(uname)" == "Linux" ]] && [ ! -w "${XDG_RUNTIME_DIR:-}" ]; then
+    export XDG_RUNTIME_DIR="$HOME/.podman-data/runtime"
+    mkdir -p "$XDG_RUNTIME_DIR"
+fi
+
 set -a
 source config.env
 set +a

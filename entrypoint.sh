@@ -4,17 +4,14 @@ set -e
 eval "$(micromamba shell hook -s bash)"
 
 # First-run: if conda-envs dir is mounted but denv doesn't exist, recreate it
-if [ ! -x /opt/conda/envs/denv/bin/R ]; then
+if [ ! -x /opt/conda/envs/denv/bin/python ]; then
     echo "First run: creating denv (this takes a few minutes)..."
     micromamba create -n denv -y \
-        r-base="${R_VERSION}" \
-        r-tidyverse r-irkernel \
         python="${PYTHON_VERSION}" \
         jupyterlab notebook ipykernel numpy pandas matplotlib scikit-learn \
         google-cloud-sdk google-cloud-storage gcsfs
     micromamba run -n denv python -m ipykernel install \
         --name denv --display-name "Python (denv)" --sys-prefix
-    micromamba run -n denv Rscript -e "IRkernel::installspec(user=FALSE)"
 fi
 
 micromamba activate denv
@@ -33,7 +30,7 @@ fi
 
 # Forward GCP credentials to all services (terminals + R sessions)
 if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
-    echo "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /opt/conda/envs/denv/lib/R/etc/Renviron.site
+    echo "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /usr/local/lib/R/etc/Renviron.site
     echo "export GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /etc/profile.d/z-gcp.sh
     gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}" 2>/dev/null || true
 fi
