@@ -16,6 +16,10 @@ fi
 
 micromamba activate denv
 
+# Persist Claude config inside the named volume at /root/.claude
+# by symlinking /root/.claude.json → /root/.claude/.claude.json
+ln -sf /root/.claude/.claude.json /root/.claude.json
+
 echo "-----------------------------------------------------"
 echo "  Python: $(python --version 2>&1)"
 echo "  R:      $(R --version 2>&1 | head -1)"
@@ -66,8 +70,15 @@ case "$1" in
     echo "Launching shell with denv activated..."
     exec bash
     ;;
+  vscode)
+    echo "Starting VS Code Server on port 8080..."
+    exec code-server \
+      --bind-addr 0.0.0.0:8080 \
+      --auth password \
+      "${WORK_MOUNT:-/home/workdir}"
+    ;;
   *)
-    echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash]"
+    echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode]"
     echo "Defaulting to JupyterLab..."
     exec jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
     ;;

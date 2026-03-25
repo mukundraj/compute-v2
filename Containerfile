@@ -62,6 +62,9 @@ ENV PATH=$PNPM_HOME:$PATH
 RUN curl -fsSL https://get.pnpm.io/install.sh | SHELL=bash PNPM_HOME=$PNPM_HOME sh - && \
     pnpm env use --global 20
 
+# ---------- code-server (VS Code in browser) ----------
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+
 # ---------- Claude Code (last so version bumps rebuild only this layer) ----------
 RUN pnpm add -g @anthropic-ai/claude-code
 
@@ -69,7 +72,7 @@ RUN pnpm add -g @anthropic-ai/claude-code
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 8888 8787
+EXPOSE 8888 8787 8080
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["jupyter"]

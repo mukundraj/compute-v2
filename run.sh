@@ -20,15 +20,17 @@ case "$PROFILE" in
         PYTHON_VERSION=$PYTHON_VERSION_A
         JUPYTER_PORT=$JUPYTER_PORT_A
         RSTUDIO_PORT=$RSTUDIO_PORT_A
+        VSCODE_PORT=$VSCODE_PORT_A
         ;;
     b)
         R_VERSION=$R_VERSION_B
         PYTHON_VERSION=$PYTHON_VERSION_B
         JUPYTER_PORT=$JUPYTER_PORT_B
         RSTUDIO_PORT=$RSTUDIO_PORT_B
+        VSCODE_PORT=$VSCODE_PORT_B
         ;;
     *)
-        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash]"
+        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode]"
         exit 1
         ;;
 esac
@@ -132,8 +134,23 @@ case "$SERVICE" in
             --name ds-bash-${PROFILE} \
             ${IMAGE} bash
         ;;
+    vscode)
+        echo "Starting VS Code Server → http://localhost:${VSCODE_PORT}"
+        podman run -it --rm \
+            -p 0.0.0.0:${VSCODE_PORT}:8080 \
+            ${COMMON_VOLUMES} \
+            ${COMMON_ENV} \
+            ${GCP_VOLUMES} \
+            ${GCP_ENV} \
+            ${PACKAGES_VOLUMES} \
+            ${PACKAGES_ENV} \
+            -e PASSWORD=$(whoami) \
+            -v ds-vscode-config-${PROFILE}:/root/.local/share/code-server \
+            --name ds-vscode-${PROFILE} \
+            ${IMAGE} vscode
+        ;;
     *)
-        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash]"
+        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode]"
         exit 1
         ;;
 esac
