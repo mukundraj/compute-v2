@@ -6,8 +6,10 @@ if [[ "$(uname)" == "Linux" ]]; then
     ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
 fi
 if [[ "$(uname)" == "Linux" ]] && [ ! -w "${XDG_RUNTIME_DIR:-}" ]; then
-    export XDG_RUNTIME_DIR="$HOME/.podman-data/runtime"
+    # Must be on local /tmp — network-mounted $HOME breaks network namespace creation
+    export XDG_RUNTIME_DIR="/tmp/${USER}-podman-runtime"
     mkdir -p "$XDG_RUNTIME_DIR"
+    chmod 700 "$XDG_RUNTIME_DIR"
 fi
 
 # Linux: redirect Podman's tmp scratch space to $HOME to avoid filling the
@@ -15,6 +17,11 @@ fi
 if [[ "$(uname)" == "Linux" ]]; then
     export TMPDIR="$HOME/.podman-tmp"
     mkdir -p "$TMPDIR"
+fi
+
+# Reconcile any stale Podman internal state (e.g. after runtime dir change)
+if [[ "$(uname)" == "Linux" ]]; then
+    podman system migrate 2>/dev/null || true
 fi
 
 set -a
