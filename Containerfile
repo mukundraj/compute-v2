@@ -11,7 +11,7 @@ ENV PYTHON_VERSION=${PYTHON_VERSION}
 ENV MAMBA_ROOT_PREFIX=/opt/conda
 ENV PATH=$MAMBA_ROOT_PREFIX/bin:$PATH
 
-RUN apt-get update && apt-get install -y curl bzip2 ca-certificates libzmq3-dev && \
+RUN apt-get update && apt-get install -y curl bzip2 ca-certificates libzmq3-dev vim less && \
     curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
       | tar -xvj -C /usr/local/bin --strip-components=1 bin/micromamba && \
     micromamba shell init -s bash --root-prefix $MAMBA_ROOT_PREFIX && \

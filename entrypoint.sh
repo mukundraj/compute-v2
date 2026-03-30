@@ -38,6 +38,14 @@ if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
     echo "export GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /etc/profile.d/z-gcp.sh
     gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}" 2>/dev/null || true
 fi
+for _var in GCS_READ_PATHS GCS_WRITE_PATHS; do
+    _val="${!_var}"
+    if [ -n "$_val" ]; then
+        echo "${_var}=${_val}" >> /usr/local/lib/R/etc/Renviron.site
+        echo "export ${_var}=${_val}" >> /etc/profile.d/z-gcp.sh
+    fi
+done
+unset _var _val
 
 case "$1" in
   jupyter|jupyterlab)
