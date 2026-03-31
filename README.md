@@ -12,7 +12,7 @@ Edit **only** `config.env` to change any version or setting:
 config.env
 ├── R_VERSION_A / R_VERSION_B
 ├── PYTHON_VERSION_A / PYTHON_VERSION_B
-└── Ports for each profile
+└── Ports for each profile (Jupyter, RStudio, VS Code)
 ```
 
 ## Prerequisites
@@ -63,8 +63,10 @@ chmod +x build.sh run.sh stop.sh status.sh
 # Single profile
 ./run.sh a jupyter    # http://localhost:8888
 ./run.sh a rstudio    # http://localhost:8787
-./run.sh b jupyter    # http://localhost:8889
-./run.sh b rstudio    # http://localhost:8788
+./run.sh a vscode     # http://localhost:8901
+./run.sh b jupyter    # http://localhost:8902
+./run.sh b rstudio    # http://localhost:8903
+./run.sh b vscode     # http://localhost:8904
 
 # Both profiles simultaneously (different R versions side by side)
 ./run.sh a rstudio &
@@ -80,6 +82,10 @@ chmod +x build.sh run.sh stop.sh status.sh
 > **First-time Claude login:** Claude Code's config is stored in a named Podman volume
 > (`ds-claude-config-<profile>`), isolated from the host. Run `/login` once inside the
 > container to authenticate. Auth persists across restarts.
+
+> **VS Code Server login:** The password is your local username (`whoami`). VS Code
+> extensions and settings are stored in a named Podman volume
+> (`ds-vscode-config-<profile>`) and persist across restarts.
 
 ### 5. Monitor and stop
 
@@ -155,6 +161,7 @@ edit `run.sh` and change:
    PYTHON_VERSION_C=3.10
    JUPYTER_PORT_C=8890
    RSTUDIO_PORT_C=8789
+   VSCODE_PORT_C=8905
    ```
 2. Add a `c)` case to `build.sh`, `run.sh`, `stop.sh`, and `status.sh`
 
