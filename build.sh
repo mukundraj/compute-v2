@@ -39,6 +39,7 @@ build_image() {
 
     podman build \
         $ISOLATION_OPT \
+        $EXTRA_BUILD_ARGS \
         --platform linux/amd64 \
         --build-arg R_VERSION=${R_VERSION} \
         --build-arg PYTHON_VERSION=${PYTHON_VERSION} \
@@ -47,6 +48,13 @@ build_image() {
         .
     echo "Done: $TAG"
 }
+
+EXTRA_BUILD_ARGS=""
+for arg in "$@"; do
+    case "$arg" in
+        --no-cache) EXTRA_BUILD_ARGS="$EXTRA_BUILD_ARGS --no-cache" ;;
+    esac
+done
 
 case "${1:-all}" in
     a)

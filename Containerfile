@@ -11,7 +11,11 @@ ENV PYTHON_VERSION=${PYTHON_VERSION}
 ENV MAMBA_ROOT_PREFIX=/opt/conda
 ENV PATH=$MAMBA_ROOT_PREFIX/bin:$PATH
 
-RUN apt-get update && apt-get install -y curl bzip2 ca-certificates libzmq3-dev vim less && \
+RUN apt-get update && apt-get install -y curl bzip2 ca-certificates libzmq3-dev vim less \
+    libglpk-dev libicu-dev libzstd-dev \
+    libhdf5-dev libfontconfig1-dev libfreetype6-dev libpng-dev libtiff5-dev \
+    libfribidi-dev libharfbuzz-dev libjpeg-dev libgeos-dev libgdal-dev \
+    libproj-dev libudunits2-dev libcurl4-openssl-dev libssl-dev libxml2-dev cmake && \
     curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest \
       | tar -xvj -C /usr/local/bin --strip-components=1 bin/micromamba && \
     micromamba shell init -s bash --root-prefix $MAMBA_ROOT_PREFIX && \
@@ -43,7 +47,23 @@ RUN micromamba install -n denv -y \
 ENV PATH=$MAMBA_ROOT_PREFIX/envs/denv/bin:$PATH
 
 # ---------- R packages (using rocker's system R) ----------
-RUN Rscript -e "install.packages(c('tidyverse', 'IRkernel'), repos='https://p3m.dev/cran/__linux__/jammy/latest')"
+RUN R -e "install.packages(c('tidyverse', 'IRkernel', \
+                             'ggplot2', 'cowplot', \
+                             'qs2','viridis', \
+                             'rstudioapi', \
+                             'Seurat', 'SeuratObject', \
+                             'BiocManager', 'renv', 'tidyr'), \
+                             repos='https://p3m.dev/cran/__linux__/noble/latest', \
+                             Ncpus=8L)"
+
+RUN R -e "BiocManager::install(c('GenomicRanges', 'SummarizedExperiment', 'DESeq2', 'fgsea'), ask = FALSE)"
+
+# ---------- verify R packages ----------
+RUN R -e "pkgs <- c('tidyverse','IRkernel','ggplot2','cowplot','qs2','viridis', \
+                     'rstudioapi','Seurat','SeuratObject','BiocManager','renv','tidyr', \
+                     'GenomicRanges','SummarizedExperiment','DESeq2','fgsea'); \
+          missing <- pkgs[!sapply(pkgs, requireNamespace, quietly=TRUE)]; \
+          if(length(missing)) stop('Missing R packages: ', paste(missing, collapse=', '))"
 
 # ---------- kernel specs ----------
 RUN micromamba run -n denv python -m ipykernel install \
