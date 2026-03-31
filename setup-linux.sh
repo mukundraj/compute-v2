@@ -2,6 +2,9 @@
 # Run once on a new Linux machine before using build.sh / run.sh
 set -e
 
+# shellcheck source=utils.sh
+source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+
 DATA_DIR="${HOME}/.podman-data"
 # Runtime dir must be on local storage — network-mounted $HOME (NFS/CIFS) breaks
 # network namespace creation (pasta/slirp4netns). Use /tmp instead.
@@ -63,6 +66,16 @@ echo "Configured cgroup_manager=cgroupfs, tmp_dir, and runtime=${OCI_RUNTIME}"
 # 5. Reset Podman storage to pick up new config
 podman system reset --force 2>/dev/null || true
 echo "Reset Podman storage"
+
+# 6. Source utils.sh for all users via system-wide bashrc
+UTILS_PATH="$(realpath "$(dirname "${BASH_SOURCE[0]}")/utils.sh")"
+BASHRC_LINE="[ -f \"${UTILS_PATH}\" ] && source \"${UTILS_PATH}\""
+if ! grep -qF "$UTILS_PATH" /etc/bash.bashrc 2>/dev/null; then
+    echo "$BASHRC_LINE" | sudo tee -a /etc/bash.bashrc > /dev/null
+    echo "Added utils.sh to /etc/bash.bashrc"
+else
+    echo "utils.sh already present in /etc/bash.bashrc — skipping"
+fi
 
 echo ""
 echo "Setup complete. Run: ./build.sh all"
