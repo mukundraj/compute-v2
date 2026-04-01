@@ -14,6 +14,19 @@ if [[ "$(uname)" == "Linux" ]] && [ ! -w "${XDG_RUNTIME_DIR:-}" ]; then
     podman system migrate &>/dev/null || true
 fi
 
+# Detect and recover from stale boot ID after a system reboot
+if [[ "$(uname)" == "Linux" ]]; then
+    _podman_check=$(podman info 2>&1 || true)
+    if echo "$_podman_check" | grep -q "unhandled reboot"; then
+        echo "Detected stale Podman state from a previous boot — cleaning up..."
+        # Extract the two paths Podman tells us to delete from the error message
+        while IFS= read -r _dir; do
+            [ -n "$_dir" ] && rm -rf "$_dir" && echo "  removed: $_dir"
+        done < <(echo "$_podman_check" | grep -oP '(?<=delete directories ")[^"]+' | tr ',' '\n' | tr -d ' "')
+        echo "Cleanup done. Retrying..."
+    fi
+fi
+
 set -a
 source config.env
 set +a
