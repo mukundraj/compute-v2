@@ -104,6 +104,9 @@ status() {
     fi
     host_ip=${host_ip:-localhost}
 
+    local public_ip
+    public_ip=$(curl -sf --max-time 3 https://checkip.amazonaws.com 2>/dev/null | tr -d '[:space:]')
+
     local running
     running=$(podman ps --filter "name=ds-" --format "{{.Names}}\t{{.Ports}}" 2>/dev/null)
 
@@ -118,7 +121,11 @@ status() {
         local host_port
         host_port=$(echo "$ports" | grep -oE '0\.0\.0\.0:[0-9]+' | head -1 | cut -d: -f2)
         if [[ -n "$host_port" ]]; then
-            printf "  %-25s http://%s:%s\n" "$name" "$host_ip" "$host_port"
+            if [[ -n "$public_ip" ]]; then
+                printf "  %-25s http://%s:%s\n" "$name" "$public_ip" "$host_port"
+            else
+                printf "  %-25s http://%s:%s\n" "$name" "$host_ip" "$host_port"
+            fi
         else
             printf "  %-25s (no port mapping)\n" "$name"
         fi

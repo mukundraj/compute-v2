@@ -120,6 +120,9 @@ else
 fi
 HOST_IP=${HOST_IP:-localhost}
 
+# Resolve public IP (best-effort, silent on failure)
+PUBLIC_IP=$(curl -sf --max-time 3 https://checkip.amazonaws.com 2>/dev/null | tr -d '[:space:]')
+
 case "$SERVICE" in
     jupyter)
         echo "Starting JupyterLab (profile $PROFILE)..."
@@ -132,7 +135,8 @@ case "$SERVICE" in
             -e "JUPYTER_PASSWORD=$(whoami)" \
             --name "ds-jupyter-${PROFILE}" \
             "${IMAGE}" jupyter
-        echo "JupyterLab → http://${HOST_IP}:${JUPYTER_PORT}"
+        echo "JupyterLab → http://${HOST_IP}:${JUPYTER_PORT} (local)"
+        [[ -n "$PUBLIC_IP" ]] && echo "JupyterLab → http://${PUBLIC_IP}:${JUPYTER_PORT} (public)"
         ;;
     rstudio)
         echo "Starting RStudio (profile $PROFILE)..."
@@ -145,7 +149,8 @@ case "$SERVICE" in
             -e "PASSWORD=$(whoami)" \
             --name "ds-rstudio-${PROFILE}" \
             "${IMAGE}" rstudio
-        echo "RStudio → http://${HOST_IP}:${RSTUDIO_PORT}"
+        echo "RStudio → http://${HOST_IP}:${RSTUDIO_PORT} (local)"
+        [[ -n "$PUBLIC_IP" ]] && echo "RStudio → http://${PUBLIC_IP}:${RSTUDIO_PORT} (public)"
         ;;
     claude)
         echo "Starting Claude Code (profile $PROFILE)..."
@@ -179,7 +184,8 @@ case "$SERVICE" in
             -v "ds-vscode-config-${PROFILE}:/root/.local/share/code-server" \
             --name "ds-vscode-${PROFILE}" \
             "${IMAGE}" vscode
-        echo "VS Code Server → http://${HOST_IP}:${VSCODE_PORT}"
+        echo "VS Code Server → http://${HOST_IP}:${VSCODE_PORT} (local)"
+        [[ -n "$PUBLIC_IP" ]] && echo "VS Code Server → http://${PUBLIC_IP}:${VSCODE_PORT} (public)"
         ;;
     *)
         echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode]"
