@@ -10,11 +10,8 @@ if [[ "$(uname)" == "Linux" ]] && [ ! -w "${XDG_RUNTIME_DIR:-}" ]; then
     export XDG_RUNTIME_DIR="/tmp/${USER}-podman-runtime"
     mkdir -p "$XDG_RUNTIME_DIR"
     chmod 700 "$XDG_RUNTIME_DIR"
-fi
-
-# Reconcile any stale Podman internal state (e.g. after runtime dir change)
-if [[ "$(uname)" == "Linux" ]]; then
-    podman system migrate 2>/dev/null || true
+    # Reconcile stale Podman state after runtime dir change
+    podman system migrate &>/dev/null || true
 fi
 
 set -a
