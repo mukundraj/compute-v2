@@ -122,8 +122,8 @@ HOST_IP=${HOST_IP:-localhost}
 
 case "$SERVICE" in
     jupyter)
-        echo "Starting JupyterLab → http://${HOST_IP}:${JUPYTER_PORT}"
-        podman run -it --rm \
+        echo "Starting JupyterLab (profile $PROFILE)..."
+        podman run -d --rm \
             -p "0.0.0.0:${JUPYTER_PORT}:8888" \
             "${COMMON_VOLUMES[@]}" \
             "${COMMON_ENV[@]}" \
@@ -132,10 +132,11 @@ case "$SERVICE" in
             -e "JUPYTER_PASSWORD=$(whoami)" \
             --name "ds-jupyter-${PROFILE}" \
             "${IMAGE}" jupyter
+        echo "JupyterLab → http://${HOST_IP}:${JUPYTER_PORT}"
         ;;
     rstudio)
-        echo "Starting RStudio → http://${HOST_IP}:${RSTUDIO_PORT}"
-        podman run -it --rm \
+        echo "Starting RStudio (profile $PROFILE)..."
+        podman run -d --rm \
             -p "0.0.0.0:${RSTUDIO_PORT}:8787" \
             "${COMMON_VOLUMES[@]}" \
             "${COMMON_ENV[@]}" \
@@ -144,6 +145,7 @@ case "$SERVICE" in
             -e "PASSWORD=$(whoami)" \
             --name "ds-rstudio-${PROFILE}" \
             "${IMAGE}" rstudio
+        echo "RStudio → http://${HOST_IP}:${RSTUDIO_PORT}"
         ;;
     claude)
         echo "Starting Claude Code (profile $PROFILE)..."
@@ -166,8 +168,8 @@ case "$SERVICE" in
             "${IMAGE}" bash
         ;;
     vscode)
-        echo "Starting VS Code Server → http://${HOST_IP}:${VSCODE_PORT}"
-        podman run -it --rm \
+        echo "Starting VS Code Server (profile $PROFILE)..."
+        podman run -d --rm \
             -p "0.0.0.0:${VSCODE_PORT}:8080" \
             "${COMMON_VOLUMES[@]}" \
             "${COMMON_ENV[@]}" \
@@ -177,6 +179,7 @@ case "$SERVICE" in
             -v "ds-vscode-config-${PROFILE}:/root/.local/share/code-server" \
             --name "ds-vscode-${PROFILE}" \
             "${IMAGE}" vscode
+        echo "VS Code Server → http://${HOST_IP}:${VSCODE_PORT}"
         ;;
     *)
         echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode]"
