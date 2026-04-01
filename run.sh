@@ -143,6 +143,15 @@ fi
 
 echo "Profile $PROFILE: R=${R_VERSION} Python=${PYTHON_VERSION}"
 
+# Check if container is already running
+CONTAINER_NAME="ds-${SERVICE}-${PROFILE}"
+if podman ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+    echo "Container '${CONTAINER_NAME}' is already running."
+    echo ""
+    bash "$(dirname "$0")/status.sh"
+    exit 0
+fi
+
 # Resolve host IP for display (prefer first non-loopback address)
 if [[ "$(uname)" == "Darwin" ]]; then
     HOST_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
