@@ -19,12 +19,19 @@ if [ -z "$PROFILE" ]; then
 fi
 SERVICE="${2:-}"
 
+stop_container() {
+    local name="$1"
+    podman stop "$name" 2>/dev/null || true
+}
+
 stop_profile() {
     local p="$1"
     if [ -n "$SERVICE" ]; then
-        podman stop "ds-${SERVICE}-${p}" 2>/dev/null || true
+        stop_container "ds-${SERVICE}-${p}"
     else
-        podman stop ds-jupyter-${p} ds-rstudio-${p} ds-vscode-${p} ds-claude-${p} ds-bash-${p} 2>/dev/null || true
+        for svc in jupyter rstudio vscode claude bash; do
+            stop_container "ds-${svc}-${p}"
+        done
     fi
 }
 
@@ -37,10 +44,9 @@ case "$PROFILE" in
         ;;
     all)
         if [ -n "$SERVICE" ]; then
-            podman stop "ds-${SERVICE}-a" "ds-${SERVICE}-b" 2>/dev/null || true
+            for p in a b; do stop_container "ds-${SERVICE}-${p}"; done
         else
-            podman stop ds-jupyter-a ds-rstudio-a ds-vscode-a ds-claude-a ds-bash-a \
-                         ds-jupyter-b ds-rstudio-b ds-vscode-b ds-claude-b ds-bash-b 2>/dev/null || true
+            for p in a b; do stop_profile "$p"; done
         fi
         ;;
     *)
