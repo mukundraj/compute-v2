@@ -21,10 +21,15 @@ echo "Set XDG_RUNTIME_DIR=${RUNTIME_DIR} (local /tmp — required for network na
 # 2. Raise file descriptor limit (needed for large container layers)
 ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
 
-# 3. Install fuse-overlayfs and OCI runtime if missing
+# 3. Install Podman, fuse-overlayfs, and OCI runtime if missing
 PKGS=()
+command -v podman &>/dev/null || PKGS+=(podman)
 command -v fuse-overlayfs &>/dev/null || PKGS+=(fuse-overlayfs)
 command -v crun &>/dev/null || command -v runc &>/dev/null || PKGS+=(crun runc)
+command -v rsync &>/dev/null || PKGS+=(rsync)
+command -v tmux &>/dev/null || PKGS+=(tmux)
+command -v htop &>/dev/null || PKGS+=(htop)
+command -v git &>/dev/null || PKGS+=(git)
 if [ ${#PKGS[@]} -gt 0 ]; then
     echo "Installing packages (requires sudo): ${PKGS[*]}"
     sudo apt-get install -y "${PKGS[@]}"
