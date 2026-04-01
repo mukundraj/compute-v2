@@ -13,6 +13,7 @@ RUNTIME_DIR="/tmp/${USER}-podman-runtime"
 # 1. Create persistent directories
 mkdir -p "${RUNTIME_DIR}"
 chmod 700 "${RUNTIME_DIR}"
+mkdir -p "${RUNTIME_DIR}/libpod/tmp"   # Podman won't create this itself; missing = pause.pid error
 mkdir -p "${DATA_DIR}/tmp"
 mkdir -p "${DATA_DIR}/storage"
 export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
@@ -68,19 +69,65 @@ cat > ~/.config/containers/containers.conf << EOF
 EOF
 echo "Configured cgroup_manager=cgroupfs, tmp_dir, and runtime=${OCI_RUNTIME}"
 
-# 5. Reset Podman storage to pick up new config
-podman system reset --force 2>/dev/null || true
+# 5. Reset Podman storage to pick up new config, then migrate to clear stale runtime state
+timeout 15 podman system reset --force 2>/dev/null || true
+podman system migrate 2>/dev/null || true
 echo "Reset Podman storage"
 
-# 6. Source utils.sh for all users via system-wide bashrc
+# 6 & 7. Add utils.sh, XDG_RUNTIME_DIR, and run/stop aliases to /etc/bash.bashrc
+#        Skipped silently if the current user lacks passwordless sudo — a privileged
+#        user should run this script once to configure the system for all users.
 UTILS_PATH="$(realpath "$(dirname "${BASH_SOURCE[0]}")/utils.sh")"
-BASHRC_LINE="[ -f \"${UTILS_PATH}\" ] && source \"${UTILS_PATH}\""
-if ! grep -qF "$UTILS_PATH" /etc/bash.bashrc 2>/dev/null; then
-    echo "$BASHRC_LINE" | sudo tee -a /etc/bash.bashrc > /dev/null
-    echo "Added utils.sh to /etc/bash.bashrc"
+REPO_DIR="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
+SYSTEM_BASHRC="/etc/bash.bashrc"
+
+if sudo -n true 2>/dev/null; then
+    # utils.sh — keyed on a fixed marker so path differences between users don't re-add it
+    if ! grep -qF "compute-v2/utils.sh" "$SYSTEM_BASHRC" 2>/dev/null; then
+        echo "[ -f \"${UTILS_PATH}\" ] && source \"${UTILS_PATH}\"" | sudo tee -a "$SYSTEM_BASHRC" > /dev/null
+        echo "Added utils.sh to ${SYSTEM_BASHRC}"
+    else
+        echo "utils.sh already present in ${SYSTEM_BASHRC} — skipping"
+    fi
+
+    # XDG_RUNTIME_DIR — single-quoted so ${USER} expands per-user at login time
+    XDG_LINE='export XDG_RUNTIME_DIR="/tmp/${USER}-podman-runtime"'
+    if ! grep -qF 'XDG_RUNTIME_DIR="/tmp/${USER}-podman-runtime"' "$SYSTEM_BASHRC" 2>/dev/null; then
+        echo "$XDG_LINE" | sudo tee -a "$SYSTEM_BASHRC" > /dev/null
+        echo "Pinned XDG_RUNTIME_DIR in ${SYSTEM_BASHRC}"
+    else
+        echo "XDG_RUNTIME_DIR already set in ${SYSTEM_BASHRC} — skipping"
+    fi
+
+    # Aliases for run and stop
+    for alias_entry in "run:${REPO_DIR}/run.sh" "stop:${REPO_DIR}/stop.sh"; do
+        alias_name="${alias_entry%%:*}"
+        alias_target="${alias_entry##*:}"
+        alias_line="alias ${alias_name}='${alias_target}'"
+        if ! grep -qF "alias ${alias_name}='${alias_target}'" "$SYSTEM_BASHRC" 2>/dev/null; then
+            echo "$alias_line" | sudo tee -a "$SYSTEM_BASHRC" > /dev/null
+            echo "Added alias to ${SYSTEM_BASHRC}: ${alias_line}"
+        else
+            echo "Alias '${alias_name}' already present in ${SYSTEM_BASHRC} — skipping"
+        fi
+    done
 else
-    echo "utils.sh already present in /etc/bash.bashrc — skipping"
+    echo "No sudo access — skipping system-wide config (already done by privileged user)."
 fi
 
 echo ""
 echo "Setup complete. Run: ./build.sh all"
+
+# If the script is being sourced (not executed), activate changes immediately
+# in the current shell without waiting for a new login session.
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    set +e  # don't leave errexit active in the user's shell after sourcing
+    export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
+    alias run="${REPO_DIR}/run.sh"
+    alias stop="${REPO_DIR}/stop.sh"
+    # shellcheck source=/dev/null
+    source "${UTILS_PATH}"
+    echo "Shell reloaded — aliases are active."
+else
+    echo "Tip: run as 'source ./setup-linux.sh' to activate aliases immediately."
+fi

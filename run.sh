@@ -8,10 +8,14 @@ fi
 if [[ "$(uname)" == "Linux" ]] && [ ! -w "${XDG_RUNTIME_DIR:-}" ]; then
     # Must be on local /tmp — network-mounted $HOME breaks network namespace creation
     export XDG_RUNTIME_DIR="/tmp/${USER}-podman-runtime"
-    mkdir -p "$XDG_RUNTIME_DIR"
-    chmod 700 "$XDG_RUNTIME_DIR"
     # Reconcile stale Podman state after runtime dir change
     podman system migrate &>/dev/null || true
+fi
+if [[ "$(uname)" == "Linux" ]]; then
+    # /tmp is cleared on reboot; recreate dirs Podman won't create itself
+    mkdir -p "$XDG_RUNTIME_DIR"
+    chmod 700 "$XDG_RUNTIME_DIR"
+    mkdir -p "${XDG_RUNTIME_DIR}/libpod/tmp"
 fi
 
 # Detect and recover from stale boot ID after a system reboot
