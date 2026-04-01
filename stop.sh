@@ -11,19 +11,40 @@ set -a
 source config.env
 set +a
 
-case "${1:-all}" in
+PROFILE="${1:-}"
+
+if [ -z "$PROFILE" ]; then
+    echo "Usage: ./stop.sh [a|b|all] [jupyter|rstudio|vscode|claude|bash]"
+    exit 1
+fi
+SERVICE="${2:-}"
+
+stop_profile() {
+    local p="$1"
+    if [ -n "$SERVICE" ]; then
+        podman stop "ds-${SERVICE}-${p}" 2>/dev/null || true
+    else
+        podman stop ds-jupyter-${p} ds-rstudio-${p} ds-vscode-${p} ds-claude-${p} ds-bash-${p} 2>/dev/null || true
+    fi
+}
+
+case "$PROFILE" in
     a)
-        podman stop ds-jupyter-a ds-rstudio-a ds-vscode-a ds-claude-a ds-bash-a 2>/dev/null || true
+        stop_profile a
         ;;
     b)
-        podman stop ds-jupyter-b ds-rstudio-b ds-vscode-b ds-claude-b ds-bash-b 2>/dev/null || true
+        stop_profile b
         ;;
     all)
-        podman stop ds-jupyter-a ds-rstudio-a ds-vscode-a ds-claude-a ds-bash-a \
-                     ds-jupyter-b ds-rstudio-b ds-vscode-b ds-claude-b ds-bash-b 2>/dev/null || true
+        if [ -n "$SERVICE" ]; then
+            podman stop "ds-${SERVICE}-a" "ds-${SERVICE}-b" 2>/dev/null || true
+        else
+            podman stop ds-jupyter-a ds-rstudio-a ds-vscode-a ds-claude-a ds-bash-a \
+                         ds-jupyter-b ds-rstudio-b ds-vscode-b ds-claude-b ds-bash-b 2>/dev/null || true
+        fi
         ;;
     *)
-        echo "Usage: ./stop.sh [a|b|all]"
+        echo "Usage: ./stop.sh [a|b|all] [jupyter|rstudio|vscode|claude|bash]"
         exit 1
         ;;
 esac
