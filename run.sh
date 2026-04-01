@@ -42,6 +42,23 @@ case "$PROFILE" in
         ;;
 esac
 
+# Assign the first available port in 8901-8920; exits if none are free.
+pick_port() {
+    for port in $(seq 8901 8920); do
+        if ! ss -tlnH "sport = :${port}" 2>/dev/null | grep -q . &&
+           ! podman ps --format '{{.Ports}}' 2>/dev/null | grep -qE ":${port}->"; then
+            echo "$port"
+            return 0
+        fi
+    done
+    echo "Error: no free port available in 8901-8920" >&2
+    exit 1
+}
+
+[[ "$JUPYTER_PORT"  == "auto" ]] && JUPYTER_PORT=$(pick_port)
+[[ "$RSTUDIO_PORT"  == "auto" ]] && RSTUDIO_PORT=$(pick_port)
+[[ "$VSCODE_PORT"   == "auto" ]] && VSCODE_PORT=$(pick_port)
+
 IMAGE="ds-env-r${R_VERSION}-py${PYTHON_VERSION}"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "${WORK_DIR}"
