@@ -75,43 +75,31 @@ timeout 15 podman system reset --force 2>/dev/null || true
 podman system migrate 2>/dev/null || true
 echo "Reset Podman storage"
 
-# 6 & 7. Add utils.sh, XDG_RUNTIME_DIR, and run/stop aliases to /etc/bash.bashrc
-#        Skipped silently if the current user lacks passwordless sudo — a privileged
-#        user should run this script once to configure the system for all users.
+# 6, 7 & 8. Write utils.sh, XDG_RUNTIME_DIR, and run/stop/status aliases to
+#           /etc/profile.d/compute-v2.sh (sourced for all users on login shells),
+#           and make repo scripts executable by all users.
+#           Skipped silently if the current user lacks passwordless sudo — a privileged
+#           user should run this script once to configure the system for all users.
 UTILS_PATH="$(realpath "$(dirname "${BASH_SOURCE[0]}")/utils.sh")"
 REPO_DIR="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
-SYSTEM_BASHRC="/etc/bash.bashrc"
+PROFILE_D="/etc/profile.d/compute-v2.sh"
 
 if sudo -n true 2>/dev/null; then
-    # utils.sh — keyed on a fixed marker so path differences between users don't re-add it
-    if ! grep -qF "compute-v2/utils.sh" "$SYSTEM_BASHRC" 2>/dev/null; then
-        echo "[ -f \"${UTILS_PATH}\" ] && source \"${UTILS_PATH}\"" | sudo tee -a "$SYSTEM_BASHRC" > /dev/null
-        echo "Added utils.sh to ${SYSTEM_BASHRC}"
-    else
-        echo "utils.sh already present in ${SYSTEM_BASHRC} — skipping"
-    fi
+    # Make repo dir and all scripts executable by all users
+    sudo chmod o+x "${REPO_DIR}" "${REPO_DIR}"/*.sh
+    echo "Set o+x on ${REPO_DIR} and its scripts"
 
-    # XDG_RUNTIME_DIR — single-quoted so ${USER} expands per-user at login time
-    XDG_LINE='export XDG_RUNTIME_DIR="/tmp/${USER}-podman-runtime"'
-    if ! grep -qF 'XDG_RUNTIME_DIR="/tmp/${USER}-podman-runtime"' "$SYSTEM_BASHRC" 2>/dev/null; then
-        echo "$XDG_LINE" | sudo tee -a "$SYSTEM_BASHRC" > /dev/null
-        echo "Pinned XDG_RUNTIME_DIR in ${SYSTEM_BASHRC}"
-    else
-        echo "XDG_RUNTIME_DIR already set in ${SYSTEM_BASHRC} — skipping"
-    fi
-
-    # Aliases for run and stop
-    for alias_entry in "run:${REPO_DIR}/run.sh" "stop:${REPO_DIR}/stop.sh"; do
-        alias_name="${alias_entry%%:*}"
-        alias_target="${alias_entry##*:}"
-        alias_line="alias ${alias_name}='${alias_target}'"
-        if ! grep -qF "alias ${alias_name}='${alias_target}'" "$SYSTEM_BASHRC" 2>/dev/null; then
-            echo "$alias_line" | sudo tee -a "$SYSTEM_BASHRC" > /dev/null
-            echo "Added alias to ${SYSTEM_BASHRC}: ${alias_line}"
-        else
-            echo "Alias '${alias_name}' already present in ${SYSTEM_BASHRC} — skipping"
-        fi
-    done
+    # Write /etc/profile.d/compute-v2.sh — replaces on every run so paths stay current
+    sudo tee "${PROFILE_D}" > /dev/null << EOF
+# Managed by setup-linux.sh — do not edit manually
+[ -f "${UTILS_PATH}" ] && source "${UTILS_PATH}"
+export XDG_RUNTIME_DIR="/tmp/\${USER}-podman-runtime"
+alias run='${REPO_DIR}/run.sh'
+alias stop='${REPO_DIR}/stop.sh'
+alias status='${REPO_DIR}/status.sh'
+EOF
+    sudo chmod +x "${PROFILE_D}"
+    echo "Wrote ${PROFILE_D}"
 else
     echo "No sudo access — skipping system-wide config (already done by privileged user)."
 fi
@@ -126,6 +114,7 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
     alias run="${REPO_DIR}/run.sh"
     alias stop="${REPO_DIR}/stop.sh"
+    alias status="${REPO_DIR}/status.sh"
     # shellcheck source=/dev/null
     source "${UTILS_PATH}"
     echo "Shell reloaded — aliases are active."
