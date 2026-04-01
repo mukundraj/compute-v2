@@ -31,6 +31,7 @@ command -v rsync &>/dev/null || PKGS+=(rsync)
 command -v tmux &>/dev/null || PKGS+=(tmux)
 command -v htop &>/dev/null || PKGS+=(htop)
 command -v git &>/dev/null || PKGS+=(git)
+command -v unzip &>/dev/null || PKGS+=(unzip)
 if [ ${#PKGS[@]} -gt 0 ]; then
     echo "Installing packages (requires sudo): ${PKGS[*]}"
     sudo apt-get install -y "${PKGS[@]}"
