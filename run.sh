@@ -112,9 +112,17 @@ fi
 
 echo "Profile $PROFILE: R=${R_VERSION} Python=${PYTHON_VERSION}"
 
+# Resolve host IP for display (prefer first non-loopback address)
+if [[ "$(uname)" == "Darwin" ]]; then
+    HOST_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
+else
+    HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
+HOST_IP=${HOST_IP:-localhost}
+
 case "$SERVICE" in
     jupyter)
-        echo "Starting JupyterLab → http://localhost:${JUPYTER_PORT}"
+        echo "Starting JupyterLab → http://${HOST_IP}:${JUPYTER_PORT}"
         podman run -it --rm \
             -p "0.0.0.0:${JUPYTER_PORT}:8888" \
             "${COMMON_VOLUMES[@]}" \
@@ -126,7 +134,7 @@ case "$SERVICE" in
             "${IMAGE}" jupyter
         ;;
     rstudio)
-        echo "Starting RStudio → http://localhost:${RSTUDIO_PORT}"
+        echo "Starting RStudio → http://${HOST_IP}:${RSTUDIO_PORT}"
         podman run -it --rm \
             -p "0.0.0.0:${RSTUDIO_PORT}:8787" \
             "${COMMON_VOLUMES[@]}" \
@@ -158,7 +166,7 @@ case "$SERVICE" in
             "${IMAGE}" bash
         ;;
     vscode)
-        echo "Starting VS Code Server → http://localhost:${VSCODE_PORT}"
+        echo "Starting VS Code Server → http://${HOST_IP}:${VSCODE_PORT}"
         podman run -it --rm \
             -p "0.0.0.0:${VSCODE_PORT}:8080" \
             "${COMMON_VOLUMES[@]}" \

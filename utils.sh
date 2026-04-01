@@ -94,6 +94,37 @@ formatdisk() {
     echo "Formatted '${disk_name}' at ${disk_dev}."
 }
 
+status() {
+    # Resolve host IP (same logic as run.sh)
+    local host_ip
+    if [[ "$(uname)" == "Darwin" ]]; then
+        host_ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
+    else
+        host_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+    host_ip=${host_ip:-localhost}
+
+    local running
+    running=$(podman ps --filter "name=ds-" --format "{{.Names}}\t{{.Ports}}" 2>/dev/null)
+
+    if [[ -z "$running" ]]; then
+        echo "No ds-env containers running."
+        return 0
+    fi
+
+    echo "Running containers:"
+    while IFS=$'\t' read -r name ports; do
+        # Extract host port from patterns like "0.0.0.0:8888->8888/tcp"
+        local host_port
+        host_port=$(echo "$ports" | grep -oE '0\.0\.0\.0:[0-9]+' | head -1 | cut -d: -f2)
+        if [[ -n "$host_port" ]]; then
+            printf "  %-25s http://%s:%s\n" "$name" "$host_ip" "$host_port"
+        else
+            printf "  %-25s (no port mapping)\n" "$name"
+        fi
+    done <<< "$running"
+}
+
 mountdisk() {
     if [[ -z "$1" || -z "$2" ]]; then
         echo "Usage: mountdisk <disk_name> <mount_location>" >&2
