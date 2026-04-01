@@ -22,7 +22,7 @@ if [[ "$(uname)" == "Linux" ]]; then
         # Extract the two paths Podman tells us to delete from the error message
         while IFS= read -r _dir; do
             [ -n "$_dir" ] && rm -rf "$_dir" && echo "  removed: $_dir"
-        done < <(echo "$_podman_check" | grep -oP '(?<=delete directories ")[^"]+' | tr ',' '\n' | tr -d ' "')
+        done < <(echo "$_podman_check" | grep -oP '"[^"]+"' | tr -d '"')
         echo "Cleanup done. Retrying..."
     fi
 fi
