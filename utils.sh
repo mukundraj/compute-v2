@@ -162,4 +162,61 @@ mountdisk() {
     fi
 
     echo "Mounted '${disk_name}' (${disk_dev}) at ${mount_point}."
+
+    # Add to /etc/fstab so the disk mounts automatically on boot.
+    local uuid
+    uuid=$(sudo blkid -s UUID -o value "$disk_dev")
+    if [[ -z "$uuid" ]]; then
+        echo "Warning: could not read UUID for ${disk_dev} — skipping fstab entry." >&2
+        return 0
+    fi
+
+    local fstab_entry="UUID=${uuid} ${mount_point} ext4 defaults,nofail 0 2"
+    if grep -qsF "UUID=${uuid}" /etc/fstab; then
+        echo "fstab already has an entry for UUID=${uuid} — skipping."
+    else
+        echo "$fstab_entry" | sudo tee -a /etc/fstab > /dev/null
+        echo "Added fstab entry: ${fstab_entry}"
+    fi
+}
+
+unmountdisk() {
+    if [[ -z "$1" ]]; then
+        echo "Usage: unmountdisk <disk_name>" >&2
+        return 1
+    fi
+
+    local disk_name="$1"
+    local disk_dev
+    disk_dev=$(_resolve_disk "$disk_name") || return 1
+
+    echo "Detected '${disk_name}' at ${disk_dev}"
+
+    if ! mount | grep -q "^${disk_dev} "; then
+        echo "Error: '${disk_dev}' is not currently mounted." >&2
+        return 1
+    fi
+
+    sudo umount "$disk_dev"
+    if [[ $? -ne 0 ]]; then
+        echo "Error while unmounting '${disk_name}' at ${disk_dev}." >&2
+        return 1
+    fi
+
+    echo "Unmounted '${disk_name}' (${disk_dev})."
+
+    # Remove the matching UUID line from /etc/fstab.
+    local uuid
+    uuid=$(sudo blkid -s UUID -o value "$disk_dev")
+    if [[ -z "$uuid" ]]; then
+        echo "Warning: could not read UUID for ${disk_dev} — fstab entry not removed." >&2
+        return 0
+    fi
+
+    if grep -qsF "UUID=${uuid}" /etc/fstab; then
+        sudo sed -i "/UUID=${uuid}/d" /etc/fstab
+        echo "Removed fstab entry for UUID=${uuid}."
+    else
+        echo "No fstab entry found for UUID=${uuid}."
+    fi
 }
