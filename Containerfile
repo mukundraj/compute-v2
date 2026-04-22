@@ -52,16 +52,17 @@ RUN R -e "install.packages(c('tidyverse', 'IRkernel', \
                              'qs2','viridis', \
                              'rstudioapi', \
                              'Seurat', 'SeuratObject', \
-                             'BiocManager', 'renv', 'tidyr'), \
+                             'BiocManager', 'renv', 'tidyr', \
+                             'anndata'), \
                              repos='https://p3m.dev/cran/__linux__/noble/latest', \
                              Ncpus=8L)"
 
-RUN R -e "BiocManager::install(c('GenomicRanges', 'SummarizedExperiment', 'DESeq2', 'fgsea'), ask = FALSE)"
+RUN R -e "BiocManager::install(c('GenomicRanges', 'SummarizedExperiment', 'DESeq2', 'fgsea', 'zellkonverter'), ask = FALSE)"
 
 # ---------- verify R packages ----------
 RUN R -e "pkgs <- c('tidyverse','IRkernel','ggplot2','cowplot','qs2','viridis', \
                      'rstudioapi','Seurat','SeuratObject','BiocManager','renv','tidyr', \
-                     'GenomicRanges','SummarizedExperiment','DESeq2','fgsea'); \
+                     'anndata','GenomicRanges','SummarizedExperiment','DESeq2','fgsea','zellkonverter'); \
           missing <- pkgs[!sapply(pkgs, requireNamespace, quietly=TRUE)]; \
           if(length(missing)) stop('Missing R packages: ', paste(missing, collapse=', '))"
 
