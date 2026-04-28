@@ -45,6 +45,26 @@ else
 fi
 echo "Using OCI runtime: ${OCI_RUNTIME}"
 
+# NVIDIA GPU passthrough — detect host GPU and prompt for toolkit install if missing.
+# Not auto-installed: nvidia-container-toolkit needs NVIDIA's apt repo + sudo and
+# host policy varies. The CDI spec must be regenerated after host driver upgrades.
+if command -v nvidia-smi &>/dev/null && ! command -v nvidia-ctk &>/dev/null; then
+    echo ""
+    echo "==> NVIDIA GPU detected but nvidia-container-toolkit is not installed."
+    echo "    To enable GPU passthrough into containers:"
+    echo ""
+    echo "    curl -s -L https://nvidia.github.io/libnvidia-container/gpgkey | \\"
+    echo "      sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
+    echo "    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \\"
+    echo "      sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#' | \\"
+    echo "      sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list"
+    echo "    sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit"
+    echo "    sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml"
+    echo ""
+    echo "    Then set GPU_ENABLED=true in config.env."
+    echo ""
+fi
+
 # 4. Configure Podman for rootless operation
 mkdir -p ~/.config/containers
 

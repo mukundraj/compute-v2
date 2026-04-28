@@ -141,6 +141,14 @@ if [ -n "${PACKAGES_DIR:-}" ]; then
     )
 fi
 
+# GPU passthrough (optional) — requires nvidia-container-toolkit + CDI spec on host.
+# --security-opt=label=disable is needed on SELinux hosts (RHEL/Fedora); harmless elsewhere.
+GPU_ARGS=()
+if [ "${GPU_ENABLED:-false}" = "true" ]; then
+    GPU_ARGS+=(--device nvidia.com/gpu=all
+               --security-opt=label=disable)
+fi
+
 echo "Profile $PROFILE: R=${R_VERSION} Python=${PYTHON_VERSION}"
 
 # Check if container is already running
@@ -172,6 +180,7 @@ case "$SERVICE" in
             "${COMMON_ENV[@]}" \
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
+            "${GPU_ARGS[@]}" \
             -e "JUPYTER_PASSWORD=$(whoami)" \
             --name "ds-jupyter-${PROFILE}" \
             "${IMAGE}" jupyter
@@ -186,6 +195,7 @@ case "$SERVICE" in
             "${COMMON_ENV[@]}" \
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
+            "${GPU_ARGS[@]}" \
             -e "PASSWORD=$(whoami)" \
             --name "ds-rstudio-${PROFILE}" \
             "${IMAGE}" rstudio
@@ -199,6 +209,7 @@ case "$SERVICE" in
             "${COMMON_ENV[@]}" \
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
+            "${GPU_ARGS[@]}" \
             --name "ds-claude-${PROFILE}" \
             "${IMAGE}" claude
         ;;
@@ -209,6 +220,7 @@ case "$SERVICE" in
             "${COMMON_ENV[@]}" \
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
+            "${GPU_ARGS[@]}" \
             --name "ds-bash-${PROFILE}" \
             "${IMAGE}" bash
         ;;
@@ -220,6 +232,7 @@ case "$SERVICE" in
             "${COMMON_ENV[@]}" \
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
+            "${GPU_ARGS[@]}" \
             -e "PASSWORD=$(whoami)" \
             -v "ds-vscode-config-${PROFILE}:/root/.local/share/code-server" \
             --name "ds-vscode-${PROFILE}" \

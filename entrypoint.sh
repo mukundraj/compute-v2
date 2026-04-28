@@ -10,6 +10,9 @@ if [ ! -x /opt/conda/envs/denv/bin/python ]; then
         python="${PYTHON_VERSION}" \
         jupyterlab notebook ipykernel numpy pandas matplotlib scikit-learn \
         google-cloud-sdk google-cloud-storage gcsfs
+    micromamba run -n denv pip install --no-cache-dir \
+        torch torchvision \
+        --index-url https://download.pytorch.org/whl/cu124
     micromamba run -n denv python -m ipykernel install \
         --name denv --display-name "Python (denv)" --sys-prefix
 fi

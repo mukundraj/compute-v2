@@ -1,9 +1,9 @@
-ARG R_VERSION=4.3.2
+ARG R_VERSION=4.4.3
 FROM docker.io/rocker/rstudio:${R_VERSION}
 
 # Re-declare after FROM (ARGs reset after each FROM)
-ARG R_VERSION=4.3.2
-ARG PYTHON_VERSION=3.11
+ARG R_VERSION=4.4.3
+ARG PYTHON_VERSION=3.12
 ENV R_VERSION=${R_VERSION}
 ENV PYTHON_VERSION=${PYTHON_VERSION}
 
@@ -22,6 +22,28 @@ RUN apt-get update && apt-get install -y curl bzip2 ca-certificates libzmq3-dev 
     micromamba config append channels conda-forge && \
     micromamba config set channel_priority strict && \
     micromamba config set always_copy true
+
+# ---------- CUDA 12.6 runtime + cuDNN (host driver provides /dev/nvidia*) ----------
+# 12-6 is the latest CUDA published for ubuntu2404 (noble) in NVIDIA's apt repo;
+# 12-4 packages don't exist there. PyTorch wheels (cu124 below) bundle their own
+# CUDA runtime, so the apt version only matters for ad-hoc CUDA work — forward
+# compat against the host driver handles it.
+ARG CUDA_VERSION=12-6
+RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
+      -o /tmp/cuda-keyring.deb && \
+    dpkg -i /tmp/cuda-keyring.deb && rm /tmp/cuda-keyring.deb && \
+    apt-get update && apt-get install -y --no-install-recommends \
+      cuda-cudart-${CUDA_VERSION} \
+      cuda-nvrtc-${CUDA_VERSION} \
+      cuda-libraries-${CUDA_VERSION} \
+      libcudnn9-cuda-12 \
+      libnccl2 && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV PATH=/usr/local/cuda/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # ---------- Python environment ----------
 RUN micromamba create -n denv -y \
@@ -43,6 +65,11 @@ RUN micromamba install -n denv -y \
       google-cloud-storage \
       gcsfs && \
     micromamba clean --all --yes
+
+# ---------- PyTorch with CUDA 12.4 wheels ----------
+RUN micromamba run -n denv pip install --no-cache-dir \
+      torch torchvision \
+      --index-url https://download.pytorch.org/whl/cu124
 
 ENV PATH=$MAMBA_ROOT_PREFIX/envs/denv/bin:$PATH
 
