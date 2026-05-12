@@ -14,7 +14,7 @@ RUNTIME_DIR="/tmp/${USER}-podman-runtime"
 mkdir -p "${RUNTIME_DIR}"
 chmod 700 "${RUNTIME_DIR}"
 mkdir -p "${RUNTIME_DIR}/libpod/tmp"   # Podman won't create this itself; missing = pause.pid error
-mkdir -p "${DATA_DIR}/tmp"
+mkdir -p "${RUNTIME_DIR}/tmp"          # engine tmp_dir — must be wiped together with runRoot on reboot
 mkdir -p "${DATA_DIR}/storage"
 export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
 echo "Set XDG_RUNTIME_DIR=${RUNTIME_DIR} (local /tmp — required for network namespaces)"
@@ -81,11 +81,14 @@ EOF
 echo "Configured fuse-overlayfs storage at ${DATA_DIR}/storage"
 echo "Configured runRoot at ${RUNTIME_DIR}/containers"
 
-# Engine: cgroupfs manager + writable tmp_dir + explicit OCI runtime
+# Engine: cgroupfs manager + writable tmp_dir + explicit OCI runtime.
+# tmp_dir lives under RUNTIME_DIR (on /tmp) so its boot-ID cache is wiped on
+# reboot in lockstep with runRoot — otherwise Podman errors with
+# "current system boot ID differs from cached boot ID".
 cat > ~/.config/containers/containers.conf << EOF
 [engine]
   cgroup_manager = "cgroupfs"
-  tmp_dir = "${DATA_DIR}/tmp"
+  tmp_dir = "${RUNTIME_DIR}/tmp"
   runtime = "${OCI_RUNTIME}"
 EOF
 echo "Configured cgroup_manager=cgroupfs, tmp_dir, and runtime=${OCI_RUNTIME}"
@@ -120,8 +123,65 @@ alias status='${REPO_DIR}/status.sh'
 EOF
     sudo chmod +x "${PROFILE_D}"
     echo "Wrote ${PROFILE_D}"
+
+    # systemd-tmpfiles drop-in: recreate Podman's runtime dirs on every boot.
+    # Without this, /tmp is wiped on reboot and the next `podman` invocation fails
+    # with "lstat /tmp/${USER}-podman-runtime: no such file or directory".
+    TMPFILES_CONF="/etc/tmpfiles.d/podman-${USER}.conf"
+    sudo tee "${TMPFILES_CONF}" > /dev/null << EOF
+# Managed by setup-linux.sh — recreates rootless Podman runtime dirs on boot
+d ${RUNTIME_DIR}            0700 ${USER} ${USER} -
+d ${RUNTIME_DIR}/libpod     0700 ${USER} ${USER} -
+d ${RUNTIME_DIR}/libpod/tmp 0700 ${USER} ${USER} -
+d ${RUNTIME_DIR}/containers 0700 ${USER} ${USER} -
+d ${RUNTIME_DIR}/tmp        0700 ${USER} ${USER} -
+EOF
+    sudo systemd-tmpfiles --create "${TMPFILES_CONF}" 2>/dev/null || true
+    echo "Wrote ${TMPFILES_CONF} (recreates runtime dirs on reboot)"
+
+    # Enable lingering so `systemd --user` runs at boot and provides a session
+    # D-Bus over SSH — silences Podman's "couldn't determine address of session
+    # bus" WARN. Side effect: user processes survive logout.
+    sudo loginctl enable-linger "${USER}"
+    echo "Enabled systemd linger for ${USER}"
 else
-    echo "No sudo access — skipping system-wide config (already done by privileged user)."
+    echo "No passwordless sudo — falling back to per-user config."
+    echo "  (Ask an admin to run this script once with sudo for the system-wide bits:"
+    echo "   /etc/profile.d aliases, /etc/tmpfiles.d, loginctl enable-linger.)"
+
+    # Per-user systemd-tmpfiles equivalent — runs whenever `systemd --user` starts.
+    # Without lingering, that's on first SSH login after each reboot — recreating
+    # /tmp/$USER-podman-runtime before the user runs podman.
+    mkdir -p ~/.config/user-tmpfiles.d
+    cat > ~/.config/user-tmpfiles.d/podman.conf << EOF
+d ${RUNTIME_DIR}            0700 - - -
+d ${RUNTIME_DIR}/libpod     0700 - - -
+d ${RUNTIME_DIR}/libpod/tmp 0700 - - -
+d ${RUNTIME_DIR}/containers 0700 - - -
+d ${RUNTIME_DIR}/tmp        0700 - - -
+EOF
+    systemd-tmpfiles --user --create ~/.config/user-tmpfiles.d/podman.conf 2>/dev/null || true
+    echo "Wrote ~/.config/user-tmpfiles.d/podman.conf"
+
+    # Per-user shell config — append XDG_RUNTIME_DIR + aliases to ~/.bashrc
+    # if not already present. Guarded by a marker so re-runs are idempotent.
+    BASHRC_MARKER="# >>> compute-v2 setup-linux.sh >>>"
+    if ! grep -qF "${BASHRC_MARKER}" ~/.bashrc 2>/dev/null; then
+        cat >> ~/.bashrc << EOF
+
+${BASHRC_MARKER}
+[ -f "${UTILS_PATH}" ] && source "${UTILS_PATH}"
+export XDG_RUNTIME_DIR="/tmp/\${USER}-podman-runtime"
+alias run='${REPO_DIR}/run.sh'
+alias stop='${REPO_DIR}/stop.sh'
+alias status='${REPO_DIR}/status.sh'
+# <<< compute-v2 setup-linux.sh <<<
+EOF
+        echo "Appended XDG_RUNTIME_DIR + aliases to ~/.bashrc"
+    else
+        echo "~/.bashrc already configured — skipping"
+    fi
+    echo "Note: 'session bus' WARN from Podman will persist — needs sudo loginctl enable-linger."
 fi
 
 echo ""
