@@ -106,7 +106,7 @@ RUN printf 'export PATH=/opt/conda/envs/denv/bin:/opt/conda/bin:$PATH\n' \
 
 # ---------- pnpm + Node.js ----------
 ENV PNPM_HOME=/usr/local/share/pnpm
-ENV PATH=$PNPM_HOME:$PATH
+ENV PATH=$PNPM_HOME/bin:$PATH
 RUN curl -fsSL https://get.pnpm.io/install.sh | SHELL=bash PNPM_HOME=$PNPM_HOME sh - && \
     pnpm env use --global 20
 

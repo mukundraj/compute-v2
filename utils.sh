@@ -2,13 +2,18 @@
 # utils.sh — helper functions for compute-v2
 
 makeuser() {
-    # Usage: makeuser [username] [uid:gid]
-    #   username default: "${whoami}ai"
-    #   uid:gid  default: owner of /mnt/disks/home/<username>
+    # Usage: makeuser [username] [uid:gid] [pubkey-source]
+    #   username      default: "${whoami}ai"
+    #   uid:gid       default: owner of /mnt/disks/home/<username>
+    #   pubkey-source path to a pubkey/authorized_keys file, OR a literal
+    #                 "ssh-..." string. If omitted, tries (in order):
+    #                   1. /home/$USER/.ssh/authorized_keys
+    #                   2. google_authorized_keys $USER  (GCP OS Login)
     local current_user
     current_user="$(whoami)"
     local new_user="${1:-${current_user}ai}"
     local uidgid_arg="$2"
+    local pubkey_arg="$3"
     local home_dir="/mnt/disks/home/${new_user}"
 
     # Check that the home directory already exists on a mounted disk
@@ -113,33 +118,54 @@ makeuser() {
         sudo chmod 750 "$home_dir"
     fi
 
-    # Seed SSH access from the invoking user (shared across both branches).
-    # Never clobbers an existing authorized_keys — if one is already there, leave it alone.
-    local src_ssh="/home/${current_user}/.ssh"
+    # Seed SSH access. Never clobbers an existing authorized_keys.
     local dst_ssh="${home_dir}/.ssh"
 
-    if [[ ! -d "$src_ssh" ]]; then
-        echo "Warning: ${src_ssh} not found — skipping SSH key copy." >&2
-    elif [[ -f "${dst_ssh}/authorized_keys" ]]; then
+    if [[ -f "${dst_ssh}/authorized_keys" ]]; then
         echo "${dst_ssh}/authorized_keys already present — leaving SSH config alone."
-    elif [[ -d "$dst_ssh" ]]; then
-        # .ssh exists but no authorized_keys — only seed that one file
-        if [[ -f "${src_ssh}/authorized_keys" ]]; then
-            echo "Seeding ${dst_ssh}/authorized_keys from ${src_ssh}/authorized_keys..."
-            sudo install -m 644 -o "$target_uid" -g "$target_gid" \
-                "${src_ssh}/authorized_keys" "${dst_ssh}/authorized_keys"
-        else
-            echo "Warning: ${src_ssh}/authorized_keys not found — cannot seed SSH access." >&2
-        fi
     else
-        # No .ssh at all — copy the full directory
-        sudo cp -r "$src_ssh" "$dst_ssh"
-        sudo chown -R "${target_uid}:${target_gid}" "$dst_ssh"
-        sudo chmod 700 "$dst_ssh"
-        sudo chmod 600 "$dst_ssh"/*
-        if [[ -f "${dst_ssh}/authorized_keys" ]]; then
-            sudo chmod 644 "${dst_ssh}/authorized_keys"
+        # Resolve pubkey content from: explicit arg, ~/.ssh/authorized_keys,
+        # or google_authorized_keys (works under GCP OS Login).
+        local pubkey_content="" pubkey_src_desc=""
+
+        if [[ -n "$pubkey_arg" ]]; then
+            if [[ -f "$pubkey_arg" ]]; then
+                pubkey_content=$(cat "$pubkey_arg")
+                pubkey_src_desc="$pubkey_arg"
+            elif [[ "$pubkey_arg" =~ ^(ssh-|ecdsa-|sk-) ]]; then
+                pubkey_content="$pubkey_arg"
+                pubkey_src_desc="argument"
+            else
+                echo "Error: pubkey arg '${pubkey_arg}' is neither a readable file nor an 'ssh-…' string." >&2
+                return 1
+            fi
         fi
+
+        if [[ -z "$pubkey_content" && -s "/home/${current_user}/.ssh/authorized_keys" ]]; then
+            pubkey_content=$(sudo cat "/home/${current_user}/.ssh/authorized_keys")
+            pubkey_src_desc="/home/${current_user}/.ssh/authorized_keys"
+        fi
+
+        if [[ -z "$pubkey_content" ]] && command -v google_authorized_keys >/dev/null 2>&1; then
+            pubkey_content=$(sudo google_authorized_keys "$current_user" 2>/dev/null || true)
+            [[ -n "$pubkey_content" ]] && pubkey_src_desc="google_authorized_keys ${current_user}"
+        fi
+
+        if [[ -z "$pubkey_content" ]]; then
+            echo "Error: no public key found to seed SSH access for '${new_user}'." >&2
+            echo "Tried:" >&2
+            echo "  - /home/${current_user}/.ssh/authorized_keys" >&2
+            echo "  - google_authorized_keys ${current_user}" >&2
+            echo "Pass an explicit pubkey file or 'ssh-…' string as the 3rd argument:" >&2
+            echo "  makeuser ${new_user} ${target_uid}:${target_gid} /path/to/pubkey" >&2
+            return 1
+        fi
+
+        echo "Seeding ${dst_ssh}/authorized_keys from ${pubkey_src_desc}..."
+        sudo install -d -m 700 -o "$target_uid" -g "$target_gid" "$dst_ssh"
+        printf '%s\n' "$pubkey_content" | sudo tee "${dst_ssh}/authorized_keys" >/dev/null
+        sudo chown "${target_uid}:${target_gid}" "${dst_ssh}/authorized_keys"
+        sudo chmod 600 "${dst_ssh}/authorized_keys"
     fi
 
     echo "Done. '${new_user}' can SSH in: ssh ${new_user}@<host>"
