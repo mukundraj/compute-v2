@@ -2,9 +2,13 @@
 # utils.sh — helper functions for compute-v2
 
 makeuser() {
+    # Usage: makeuser [username] [uid:gid]
+    #   username default: "${whoami}ai"
+    #   uid:gid  default: owner of /mnt/disks/home/<username>
     local current_user
     current_user="$(whoami)"
-    local new_user="${current_user}ai"
+    local new_user="${1:-${current_user}ai}"
+    local uidgid_arg="$2"
     local home_dir="/mnt/disks/home/${new_user}"
 
     # Check that the home directory already exists on a mounted disk
@@ -14,43 +18,131 @@ makeuser() {
         return 1
     fi
 
-    # Check that new user doesn't already exist
-    if id "$new_user" &>/dev/null; then
-        echo "Error: user '${new_user}' already exists." >&2
-        return 1
+    # Resolve target uid/gid: explicit argument wins, else read from the home dir
+    local target_uid target_gid
+    if [[ -n "$uidgid_arg" ]]; then
+        if [[ ! "$uidgid_arg" =~ ^[0-9]+:[0-9]+$ ]]; then
+            echo "Error: uid:gid must look like '1234:5678' (got '${uidgid_arg}')." >&2
+            return 1
+        fi
+        target_uid="${uidgid_arg%:*}"
+        target_gid="${uidgid_arg#*:}"
+    else
+        target_uid=$(stat -c '%u' "$home_dir")
+        target_gid=$(stat -c '%g' "$home_dir")
+        if [[ -z "$target_uid" || -z "$target_gid" ]]; then
+            echo "Error: could not read uid/gid from ${home_dir}." >&2
+            return 1
+        fi
     fi
 
-    echo "Creating user '${new_user}' with home ${home_dir}..."
+    # If the user already exists (e.g. auto-provisioned by GCP OS Login on first SSH),
+    # renumber them in place instead of failing.
+    if id "$new_user" &>/dev/null; then
+        echo "User '${new_user}' already exists; adjusting to uid=${target_uid}, gid=${target_gid}..."
 
-    # Create user without a default home dir, pointing at the mounted-disk path
-    sudo useradd --no-create-home --shell /bin/bash --home-dir "$home_dir" "$new_user"
+        # GCP grants logged-in users sudo via google-sudoers — drop the new account from it
+        if id -nG "$new_user" | tr ' ' '\n' | grep -qx google-sudoers; then
+            echo "Removing '${new_user}' from google-sudoers..."
+            sudo gpasswd -d "$new_user" google-sudoers
+        fi
 
-    # Copy default shell config files
-    sudo cp /etc/skel/.bash* "$home_dir"/
-    sudo chown "${new_user}:${new_user}" "$home_dir"/.*
+        local current_uid current_gid current_pgroup
+        current_uid=$(id -u "$new_user")
+        current_gid=$(id -g "$new_user")
+        current_pgroup=$(id -gn "$new_user")
 
-    # Set ownership on the home directory
-    sudo chown -R "${new_user}:${new_user}" "$home_dir"
-    sudo chmod 750 "$home_dir"
+        # Update primary gid if changing
+        if [[ "$current_gid" != "$target_gid" ]]; then
+            local target_gid_group
+            target_gid_group=$(getent group "$target_gid" | cut -d: -f1)
+            if [[ -n "$target_gid_group" ]]; then
+                # Some group already owns target_gid — point the user at it
+                sudo usermod -g "$target_gid" "$new_user"
+            else
+                # Renumber the user's current primary group
+                sudo groupmod -g "$target_gid" "$current_pgroup"
+            fi
+        fi
 
-    # Copy current user's .ssh directory so SSH login works
+        # Update uid if changing
+        if [[ "$current_uid" != "$target_uid" ]]; then
+            local target_uid_user
+            target_uid_user=$(getent passwd "$target_uid" | cut -d: -f1)
+            if [[ -n "$target_uid_user" && "$target_uid_user" != "$new_user" ]]; then
+                echo "Error: uid ${target_uid} is already used by '${target_uid_user}'." >&2
+                return 1
+            fi
+            sudo usermod -u "$target_uid" "$new_user"
+        fi
+
+        # Point home_dir at the mounted-disk path (without moving files)
+        sudo usermod -d "$home_dir" "$new_user"
+
+        sudo chown -R "${target_uid}:${target_gid}" "$home_dir"
+        sudo chmod 750 "$home_dir"
+
+        echo "Adjusted '${new_user}': uid=${target_uid}, gid=${target_gid}, home=${home_dir}."
+    else
+        # === Create new user ===
+
+        local existing_uid_user
+        existing_uid_user=$(getent passwd "$target_uid" | cut -d: -f1)
+        if [[ -n "$existing_uid_user" ]]; then
+            echo "Error: uid ${target_uid} is already used by '${existing_uid_user}'." >&2
+            return 1
+        fi
+
+        # Create a matching group if that gid isn't already taken
+        if ! getent group "$target_gid" >/dev/null; then
+            sudo groupadd --gid "$target_gid" "$new_user"
+        fi
+
+        echo "Creating user '${new_user}' (uid=${target_uid}, gid=${target_gid}) with home ${home_dir}..."
+
+        # Create user without a default home dir, pointing at the mounted-disk path
+        sudo useradd --no-create-home --shell /bin/bash --home-dir "$home_dir" \
+            --uid "$target_uid" --gid "$target_gid" "$new_user"
+
+        # Copy default shell config files
+        sudo cp /etc/skel/.bash* "$home_dir"/
+        sudo chown "${target_uid}:${target_gid}" "$home_dir"/.*
+
+        # Set ownership on the home directory
+        sudo chown -R "${target_uid}:${target_gid}" "$home_dir"
+        sudo chmod 750 "$home_dir"
+    fi
+
+    # Seed SSH access from the invoking user (shared across both branches).
+    # Never clobbers an existing authorized_keys — if one is already there, leave it alone.
     local src_ssh="/home/${current_user}/.ssh"
     local dst_ssh="${home_dir}/.ssh"
 
     if [[ ! -d "$src_ssh" ]]; then
         echo "Warning: ${src_ssh} not found — skipping SSH key copy." >&2
+    elif [[ -f "${dst_ssh}/authorized_keys" ]]; then
+        echo "${dst_ssh}/authorized_keys already present — leaving SSH config alone."
+    elif [[ -d "$dst_ssh" ]]; then
+        # .ssh exists but no authorized_keys — only seed that one file
+        if [[ -f "${src_ssh}/authorized_keys" ]]; then
+            echo "Seeding ${dst_ssh}/authorized_keys from ${src_ssh}/authorized_keys..."
+            sudo install -m 644 -o "$target_uid" -g "$target_gid" \
+                "${src_ssh}/authorized_keys" "${dst_ssh}/authorized_keys"
+        else
+            echo "Warning: ${src_ssh}/authorized_keys not found — cannot seed SSH access." >&2
+        fi
     else
+        # No .ssh at all — copy the full directory
         sudo cp -r "$src_ssh" "$dst_ssh"
-        sudo chown -R "${new_user}:${new_user}" "$dst_ssh"
+        sudo chown -R "${target_uid}:${target_gid}" "$dst_ssh"
         sudo chmod 700 "$dst_ssh"
         sudo chmod 600 "$dst_ssh"/*
-        # Ensure authorized_keys is present and has correct perms
         if [[ -f "${dst_ssh}/authorized_keys" ]]; then
             sudo chmod 644 "${dst_ssh}/authorized_keys"
         fi
     fi
 
-    echo "Done. User '${new_user}' can now SSH in: ssh ${new_user}@<host>"
+    echo "Done. '${new_user}' can SSH in: ssh ${new_user}@<host>"
 }
 
 # Resolve a GCP persistent disk name to its /dev/<id> path.
