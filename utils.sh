@@ -171,19 +171,51 @@ makeuser() {
     echo "Done. '${new_user}' can SSH in: ssh ${new_user}@<host>"
 }
 
-# Resolve a GCP persistent disk name to its /dev/<id> path.
-# Uses the exact symlink /dev/disk/by-id/google-<name> to avoid
-# false matches against disks that share a common prefix.
+# Resolve a disk identifier to its whole-disk /dev path. Accepts, in order:
+#   1. a block-device path (e.g. /dev/sdb, /dev/disk/by-id/google-home)
+#   2. a GCP device name → /dev/disk/by-id/google-<name>
+#   3. a mount point (e.g. /mnt/disks/home)
+#   4. an lsblk SERIAL match (GCP sets serial == device name; useful when
+#      the by-id symlink is missing on some images)
+# Always returns the whole-disk device, never a partition — partition-aware
+# callers (refreshdisk) walk back down via lsblk.
 _resolve_disk() {
-    local disk_name="$1"
-    local by_id="/dev/disk/by-id/google-${disk_name}"
+    local arg="$1"
+    local dev=""
 
-    if [[ ! -L "$by_id" ]]; then
-        echo "Error: no disk found with name '${disk_name}' (looked for ${by_id})." >&2
+    if [[ -b "$arg" ]]; then
+        dev=$(readlink -f "$arg")
+    elif [[ -L "/dev/disk/by-id/google-${arg}" ]]; then
+        dev=$(readlink -f "/dev/disk/by-id/google-${arg}")
+    elif [[ -d "$arg" ]] && mountpoint -q "$arg" 2>/dev/null; then
+        dev=$(findmnt -no SOURCE --target "$arg" 2>/dev/null)
+    else
+        local match
+        match=$(lsblk -ndo NAME,SERIAL 2>/dev/null \
+            | awk -v s="$arg" '$2 == s {print "/dev/"$1; exit}')
+        [[ -n "$match" && -b "$match" ]] && dev="$match"
+    fi
+
+    if [[ -z "$dev" || ! -b "$dev" ]]; then
+        echo "Error: no disk found matching '${arg}'." >&2
+        echo "Tried: block-device path, /dev/disk/by-id/google-${arg}, mount point, lsblk SERIAL." >&2
+        if compgen -G "/dev/disk/by-id/google-*" >/dev/null; then
+            echo "Available GCP device names (under /dev/disk/by-id/):" >&2
+            ls /dev/disk/by-id/google-* 2>/dev/null \
+                | sed 's|.*/google-|  |' \
+                | grep -v '\-part[0-9]*$' >&2
+        fi
         return 1
     fi
 
-    readlink -f "$by_id"
+    # Walk up to the whole-disk device in case we landed on a partition.
+    local pkname
+    pkname=$(lsblk -nro PKNAME "$dev" 2>/dev/null | head -n1)
+    if [[ -n "$pkname" ]]; then
+        echo "/dev/${pkname}"
+    else
+        echo "$dev"
+    fi
 }
 
 formatdisk() {
@@ -337,4 +369,90 @@ unmountdisk() {
     else
         echo "No fstab entry found for UUID=${uuid}."
     fi
+}
+
+# Pick up extra space after a cloud-side disk resize: grows the partition
+# (if there is one) and the ext4 filesystem in place. Online-safe — the
+# disk can stay mounted. Handles raw ext4 (no partition table, as written
+# by formatdisk) and single-partition disks.
+refreshdisk() {
+    if [[ -z "$1" ]]; then
+        echo "Usage: refreshdisk <disk_name>" >&2
+        return 1
+    fi
+
+    local disk_name="$1"
+    local disk_dev
+    disk_dev=$(_resolve_disk "$disk_name") || return 1
+
+    echo "Detected '${disk_name}' at ${disk_dev}"
+
+    # Resize target: a unique resizable partition, else the raw device.
+    # "Resizable" = mounted AND ext2/3/4. That picks /dev/sda1 cleanly on a
+    # GCP boot disk (sda1 ext4 root, sda14 BIOS-boot no-FS, sda15 vfat EFI).
+    local target="$disk_dev"
+    local parts
+    parts=$(lsblk -nrpo NAME "$disk_dev" | tail -n +2)
+    if [[ -n "$parts" ]]; then
+        local part_count
+        part_count=$(echo "$parts" | wc -l)
+        if [[ "$part_count" -eq 1 ]]; then
+            target=$(echo "$parts" | tail -n1)
+        else
+            local candidates
+            candidates=$(lsblk -nrpo NAME,FSTYPE,MOUNTPOINT "$disk_dev" \
+                | awk '$2 ~ /^ext[234]$/ && $3 != "" {print $1}')
+            local cand_count
+            cand_count=$(echo "$candidates" | grep -c .)
+            if [[ "$cand_count" -eq 1 ]]; then
+                target="$candidates"
+            else
+                echo "Error: '${disk_name}' has multiple partitions and ${cand_count} mounted ext2/3/4 candidates — can't pick one safely." >&2
+                echo "Partition layout:" >&2
+                lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT "$disk_dev" | sed 's/^/  /' >&2
+                echo "Resize the specific partition manually: sudo growpart <disk> <num> && sudo resize2fs <partition>" >&2
+                return 1
+            fi
+        fi
+        local part_num="${target##*[!0-9]}"
+
+        if ! command -v growpart >/dev/null 2>&1; then
+            echo "Error: 'growpart' not installed (needed to extend the partition). Install cloud-guest-utils and retry." >&2
+            return 1
+        fi
+
+        echo "Growing partition ${target} (number ${part_num}) on ${disk_dev}..."
+        # growpart exits 1 with "NOCHANGE" when there's nothing to do — that's fine.
+        local gp_out
+        if ! gp_out=$(sudo growpart "$disk_dev" "$part_num" 2>&1); then
+            if [[ "$gp_out" == *NOCHANGE* ]]; then
+                echo "Partition already at max size — nothing to grow."
+            else
+                echo "Error: growpart failed: ${gp_out}" >&2
+                return 1
+            fi
+        else
+            echo "$gp_out"
+        fi
+    fi
+
+    local mountpt
+    mountpt=$(lsblk -nro MOUNTPOINT "$target" | head -n1)
+    if [[ -n "$mountpt" ]]; then
+        echo "Before:"
+        df -h "$mountpt" | sed 's/^/  /'
+    fi
+
+    echo "Running resize2fs on ${target}..."
+    if ! sudo resize2fs "$target"; then
+        echo "Error: resize2fs failed for ${target}." >&2
+        return 1
+    fi
+
+    if [[ -n "$mountpt" ]]; then
+        echo "After:"
+        df -h "$mountpt" | sed 's/^/  /'
+    fi
+
+    echo "Refreshed '${disk_name}' (${target})."
 }
