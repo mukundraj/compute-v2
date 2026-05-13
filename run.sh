@@ -99,8 +99,15 @@ if [ -n "${GCP_VOLUMES:-}" ]; then
     GCP_ARGS+=(${GCP_VOLUMES})
 elif [ -n "${GCP_SERVICE_ACCOUNT_KEY:-}" ]; then
     KEY_PATH=$(eval echo "${GCP_SERVICE_ACCOUNT_KEY}")
-    GCP_ARGS+=(-v "${KEY_PATH}:/run/secrets/gcp-key.json:ro,Z"
-               -e "GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp-key.json")
+    # Resolve relative paths against the cwd where the command was invoked
+    # (podman -v requires an absolute host path).
+    [[ "$KEY_PATH" != /* ]] && KEY_PATH="${PWD}/${KEY_PATH#./}"
+    if [ ! -f "$KEY_PATH" ]; then
+        echo "Warning: GCP_SERVICE_ACCOUNT_KEY '${GCP_SERVICE_ACCOUNT_KEY}' not found at ${KEY_PATH} — skipping GCP credential mount." >&2
+    else
+        GCP_ARGS+=(-v "${KEY_PATH}:/run/secrets/gcp-key.json:ro,Z"
+                   -e "GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp-key.json")
+    fi
 fi
 
 # GCP_ENV override (rarely needed — only set if you need to inject extra env vars)
