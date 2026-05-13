@@ -2,8 +2,10 @@
 # Run once on a new Linux machine before using build.sh / run.sh
 set -e
 
+# Resolve symlinks so this still works when invoked via e.g. ~/setup.sh -> /opt/compute-v2/setup-linux.sh
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 # shellcheck source=utils.sh
-source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
+source "$(dirname "${SCRIPT_PATH}")/utils.sh"
 
 DATA_DIR="${HOME}/.podman-data"
 # Runtime dir must be on local storage — network-mounted $HOME (NFS/CIFS) breaks
@@ -133,8 +135,8 @@ echo "Reset Podman storage"
 #           and make repo scripts executable by all users.
 #           Skipped silently if the current user lacks passwordless sudo — a privileged
 #           user should run this script once to configure the system for all users.
-UTILS_PATH="$(realpath "$(dirname "${BASH_SOURCE[0]}")/utils.sh")"
-REPO_DIR="$(realpath "$(dirname "${BASH_SOURCE[0]}")")"
+REPO_DIR="$(dirname "${SCRIPT_PATH}")"
+UTILS_PATH="${REPO_DIR}/utils.sh"
 PROFILE_D="/etc/profile.d/compute-v2.sh"
 
 if sudo -n true 2>/dev/null; then
