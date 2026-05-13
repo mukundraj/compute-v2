@@ -194,7 +194,25 @@ makeuser() {
         echo "Copied ${config_src} -> ${config_dst}"
     fi
 
-    echo "Done. '${new_user}' can SSH in: ssh ${new_user}@<host>"
+    # Resolve the machine's public IP (GCP metadata first, then external services)
+    local public_ip=""
+    if command -v curl >/dev/null 2>&1; then
+        public_ip=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+            "http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip" 2>/dev/null || true)
+        if [[ -z "$public_ip" ]]; then
+            public_ip=$(curl -sf --max-time 3 https://ifconfig.me 2>/dev/null \
+                || curl -sf --max-time 3 https://icanhazip.com 2>/dev/null \
+                || true)
+            public_ip="${public_ip//$'\n'/}"
+        fi
+    fi
+
+    if [[ -n "$public_ip" ]]; then
+        echo "Done. '${new_user}' can SSH in: ssh ${new_user}@${public_ip}"
+    else
+        echo "Done. '${new_user}' can SSH in: ssh ${new_user}@<host>"
+        echo "(Could not determine public IP automatically.)"
+    fi
 }
 
 # Resolve a disk identifier to its whole-disk /dev path. Accepts, in order:
