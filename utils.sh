@@ -168,6 +168,32 @@ makeuser() {
         sudo chmod 600 "${dst_ssh}/authorized_keys"
     fi
 
+    # Symlink the shared service-account key into the new user's home dir
+    local sa_key_src="/opt/claude-default-sa-key.json"
+    local sa_key_link="${home_dir}/claude-default-sa-key.json"
+    if [[ ! -e "$sa_key_src" ]]; then
+        echo "Note: ${sa_key_src} not present — skipping SA key symlink."
+    elif [[ -e "$sa_key_link" || -L "$sa_key_link" ]]; then
+        echo "${sa_key_link} already exists — leaving it alone."
+    else
+        sudo ln -s "$sa_key_src" "$sa_key_link"
+        sudo chown -h "${target_uid}:${target_gid}" "$sa_key_link"
+        echo "Linked ${sa_key_link} -> ${sa_key_src}"
+    fi
+
+    # Copy the shared config.env into the new user's home dir
+    local config_src="/opt/compute-v2/config.env"
+    local config_dst="${home_dir}/config.env"
+    if [[ ! -f "$config_src" ]]; then
+        echo "Note: ${config_src} not present — skipping config.env copy."
+    elif [[ -e "$config_dst" ]]; then
+        echo "${config_dst} already exists — leaving it alone."
+    else
+        sudo cp "$config_src" "$config_dst"
+        sudo chown "${target_uid}:${target_gid}" "$config_dst"
+        echo "Copied ${config_src} -> ${config_dst}"
+    fi
+
     echo "Done. '${new_user}' can SSH in: ssh ${new_user}@<host>"
 }
 

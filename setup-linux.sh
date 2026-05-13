@@ -16,16 +16,33 @@ chmod 700 "${RUNTIME_DIR}"
 mkdir -p "${RUNTIME_DIR}/libpod/tmp"   # Podman won't create this itself; missing = pause.pid error
 mkdir -p "${RUNTIME_DIR}/tmp"          # engine tmp_dir — must be wiped together with runRoot on reboot
 mkdir -p "${DATA_DIR}/storage"
+mkdir -p "${DATA_DIR}/tmp"             # TMPDIR — podman load stages decompressed blobs here, off / and /var/tmp
 export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
+export TMPDIR="${DATA_DIR}/tmp"
 echo "Set XDG_RUNTIME_DIR=${RUNTIME_DIR} (local /tmp — required for network namespaces)"
+echo "Set TMPDIR=${DATA_DIR}/tmp (keeps podman blob staging off the root disk)"
 
 # 2. Raise file descriptor limit (needed for large container layers)
 ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
 
-# 3. Install Podman, fuse-overlayfs, and OCI runtime if missing
+# Native rootless overlay requires kernel >= 5.13 and unprivileged userns enabled.
+# This script no longer configures fuse-overlayfs as a fallback.
+KERNEL_VER="$(uname -r | cut -d. -f1,2)"
+KERNEL_MAJOR="${KERNEL_VER%.*}"
+KERNEL_MINOR="${KERNEL_VER#*.}"
+if [[ "${KERNEL_MAJOR}" -lt 5 ]] || { [[ "${KERNEL_MAJOR}" -eq 5 ]] && [[ "${KERNEL_MINOR}" -lt 13 ]]; }; then
+    echo "Error: kernel ${KERNEL_VER} is too old for rootless native overlay (need >= 5.13)." >&2
+    exit 1
+fi
+if [[ "$(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || echo 0)" != "1" ]]; then
+    echo "Error: unprivileged_userns_clone is not enabled." >&2
+    echo "  Enable with: sudo sysctl -w kernel.unprivileged_userns_clone=1" >&2
+    exit 1
+fi
+
+# 3. Install Podman and OCI runtime if missing
 PKGS=()
 command -v podman &>/dev/null || PKGS+=(podman)
-command -v fuse-overlayfs &>/dev/null || PKGS+=(fuse-overlayfs)
 command -v crun &>/dev/null || command -v runc &>/dev/null || PKGS+=(crun runc)
 command -v rsync &>/dev/null || PKGS+=(rsync)
 command -v tmux &>/dev/null || PKGS+=(tmux)
@@ -69,17 +86,14 @@ fi
 # 4. Configure Podman for rootless operation
 mkdir -p ~/.config/containers
 
-# Storage: fuse-overlayfs under home directory, runRoot on local /tmp
+# Storage: native kernel overlay under home directory, runRoot on local /tmp
 cat > ~/.config/containers/storage.conf << EOF
 [storage]
   driver = "overlay"
   graphRoot = "${DATA_DIR}/storage"
   runRoot = "${RUNTIME_DIR}/containers"
-
-[storage.options.overlay]
-  mount_program = "/usr/bin/fuse-overlayfs"
 EOF
-echo "Configured fuse-overlayfs storage at ${DATA_DIR}/storage"
+echo "Configured native overlay storage at ${DATA_DIR}/storage"
 echo "Configured runRoot at ${RUNTIME_DIR}/containers"
 
 # Engine: cgroupfs manager + writable tmp_dir + explicit OCI runtime.
@@ -95,6 +109,21 @@ EOF
 echo "Configured cgroup_manager=cgroupfs, tmp_dir, and runtime=${OCI_RUNTIME}"
 
 # 5. Reset Podman storage to pick up new config, then migrate to clear stale runtime state
+EXISTING_IMAGES="$(podman images -q 2>/dev/null | wc -l)"
+EXISTING_VOLUMES="$(podman volume ls -q 2>/dev/null | wc -l)"
+if [[ "${EXISTING_IMAGES}" -gt 0 || "${EXISTING_VOLUMES}" -gt 0 ]]; then
+    echo ""
+    echo "==> WARNING: existing Podman storage detected."
+    echo "    ${EXISTING_IMAGES} image(s), ${EXISTING_VOLUMES} volume(s) will be DELETED."
+    echo "    This includes ds-claude-config-* (you'll need to /login again)"
+    echo "    and ds-conda-envs-* (auto-rebuilt on first run, but slow)."
+    echo ""
+    read -r -p "Continue and wipe existing storage? [y/N] " ans
+    case "${ans}" in
+        y|Y|yes|YES) ;;
+        *) echo "Aborted. No changes made to Podman storage."; exit 1 ;;
+    esac
+fi
 timeout 15 podman system reset --force 2>/dev/null || true
 podman system migrate 2>/dev/null || true
 echo "Reset Podman storage"
@@ -118,6 +147,7 @@ if sudo -n true 2>/dev/null; then
 # Managed by setup-linux.sh — do not edit manually
 [ -f "${UTILS_PATH}" ] && source "${UTILS_PATH}"
 export XDG_RUNTIME_DIR="/tmp/\${USER}-podman-runtime"
+export TMPDIR="\${HOME}/.podman-data/tmp"
 alias run='${REPO_DIR}/run.sh'
 alias stop='${REPO_DIR}/stop.sh'
 alias status='${REPO_DIR}/status.sh'
@@ -173,6 +203,7 @@ EOF
 ${BASHRC_MARKER}
 [ -f "${UTILS_PATH}" ] && source "${UTILS_PATH}"
 export XDG_RUNTIME_DIR="/tmp/\${USER}-podman-runtime"
+export TMPDIR="\${HOME}/.podman-data/tmp"
 alias run='${REPO_DIR}/run.sh'
 alias stop='${REPO_DIR}/stop.sh'
 alias status='${REPO_DIR}/status.sh'
@@ -193,6 +224,7 @@ echo "Setup complete. Run: ./build.sh all"
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     set +e  # don't leave errexit active in the user's shell after sourcing
     export XDG_RUNTIME_DIR="${RUNTIME_DIR}"
+    export TMPDIR="${DATA_DIR}/tmp"
     alias run="${REPO_DIR}/run.sh"
     alias stop="${REPO_DIR}/stop.sh"
     alias status="${REPO_DIR}/status.sh"
