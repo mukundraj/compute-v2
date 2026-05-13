@@ -194,6 +194,19 @@ makeuser() {
         echo "Copied ${config_src} -> ${config_dst}"
     fi
 
+    # Symlink setup.sh -> /opt/compute-v2/setup-linux.sh so the new user can just run ./setup.sh
+    local setup_src="/opt/compute-v2/setup-linux.sh"
+    local setup_link="${home_dir}/setup.sh"
+    if [[ ! -e "$setup_src" ]]; then
+        echo "Note: ${setup_src} not present — skipping setup symlink."
+    elif [[ -e "$setup_link" || -L "$setup_link" ]]; then
+        echo "${setup_link} already exists — leaving it alone."
+    else
+        sudo ln -s "$setup_src" "$setup_link"
+        sudo chown -h "${target_uid}:${target_gid}" "$setup_link"
+        echo "Linked ${setup_link} -> ${setup_src}"
+    fi
+
     # Resolve the machine's public IP (GCP metadata first, then external services)
     local public_ip=""
     if command -v curl >/dev/null 2>&1; then
