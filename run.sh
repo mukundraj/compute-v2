@@ -246,6 +246,13 @@ case "$SERVICE" in
             "${IMAGE}" vscode
         echo "VS Code Server → http://${HOST_IP}:${VSCODE_PORT} (local)"
         [[ -n "$PUBLIC_IP" ]] && echo "VS Code Server → http://${PUBLIC_IP}:${VSCODE_PORT} (public)"
+        if [[ -n "$PUBLIC_IP" ]]; then
+            echo ""
+            echo "First, enter this in your laptop terminal:"
+            echo "  ssh -N -L ${VSCODE_PORT}:localhost:${VSCODE_PORT} $(whoami)@${PUBLIC_IP}"
+            echo "Then, enter this in your browser:"
+            echo "  http://localhost:${VSCODE_PORT}"
+        fi
         ;;
     *)
         echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode]"
