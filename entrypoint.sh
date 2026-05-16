@@ -84,6 +84,7 @@ case "$1" in
   vscode)
     echo "Starting VS Code Server on port 8080..."
     exec code-server \
+      --extensions-dir /opt/code-server-extensions \
       --bind-addr 0.0.0.0:8080 \
       --auth password \
       "${WORK_MOUNT:-/home/workdir}"

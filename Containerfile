@@ -113,6 +113,13 @@ RUN curl -fsSL https://get.pnpm.io/install.sh | SHELL=bash PNPM_HOME=$PNPM_HOME 
 # ---------- code-server (VS Code in browser) ----------
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 
+# Preinstall Python + Jupyter extensions into a path outside the runtime
+# volume mount (/root/.local/share/code-server), so they survive volume shadowing.
+RUN code-server \
+      --extensions-dir /opt/code-server-extensions \
+      --install-extension ms-python.python \
+      --install-extension ms-toolsai.jupyter
+
 # ---------- Claude Code (last so version bumps rebuild only this layer) ----------
 RUN pnpm add -g @anthropic-ai/claude-code
 
