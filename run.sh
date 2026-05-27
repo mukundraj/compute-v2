@@ -159,9 +159,15 @@ fi
 # passed so the in-container apt wrapper can auto-record ad-hoc `apt install`s
 # into the matching APT_PACKAGES_<profile> line.
 if [ -f "${SCRIPT_DIR}/config.local.env" ]; then
+    # Rootless Podman maps the container user outside this file's owner, so it
+    # appears as nobody:nogroup inside and the apt wrapper can't record to it.
+    # `:U` chown fails on rootless, so instead grant "other" write here (we run as
+    # the file's owner); the container user falls into the "other" class.
+    chmod o+w "${SCRIPT_DIR}/config.local.env" 2>/dev/null || true
     PACKAGES_ARGS+=(
         -v "ds-apt-cache-${PROFILE}:/var/cache/apt/archives"
         -v "${SCRIPT_DIR}/config.local.env:/opt/config.local.env:Z"
+        -v "${SCRIPT_DIR}/templates/apt-autosave.sh:/opt/apt-autosave.sh:ro,Z"
         -e "DS_PROFILE=${PROFILE}"
     )
 fi
