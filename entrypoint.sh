@@ -37,8 +37,13 @@ fi
 # Call the real binary directly so these baseline installs aren't re-recorded.
 if [ -n "${APT_PACKAGES:-}" ]; then
     echo "Installing APT_PACKAGES: ${APT_PACKAGES}"
-    /usr/bin/apt-get update -qq
-    /usr/bin/apt-get install -y --no-install-recommends ${APT_PACKAGES}
+    # Non-fatal (set -e is on): a transient network failure or one uninstallable
+    # package must not abort container startup. update can fail offline — install
+    # then falls back to cached .debs/lists; a failed install just warns so the
+    # service still launches (fix the offending entry in config.local.env).
+    /usr/bin/apt-get update -qq || echo "WARNING: apt-get update failed; using cached package lists"
+    /usr/bin/apt-get install -y --no-install-recommends ${APT_PACKAGES} \
+        || echo "WARNING: APT_PACKAGES install failed (continuing): ${APT_PACKAGES}"
 fi
 
 # Persist Claude config inside the named volume at /root/.claude
