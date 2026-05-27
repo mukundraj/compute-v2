@@ -187,7 +187,9 @@ fi
 
 echo "Profile $PROFILE: R=${R_VERSION} Python=${PYTHON_VERSION}"
 
-# Check if container is already running
+# Check if container is already running.
+# CONTAINER_NAME also doubles as the in-container --hostname below, so the
+# shell prompt reads e.g. root@ds-jupyter-a instead of a random ID hash.
 CONTAINER_NAME="ds-${SERVICE}-${PROFILE}"
 if podman ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
     echo "Container '${CONTAINER_NAME}' is already running."
@@ -218,7 +220,8 @@ case "$SERVICE" in
             "${PACKAGES_ARGS[@]}" \
             "${GPU_ARGS[@]}" \
             -e "JUPYTER_PASSWORD=$(whoami)" \
-            --name "ds-jupyter-${PROFILE}" \
+            --name "$CONTAINER_NAME" \
+            --hostname "$CONTAINER_NAME" \
             "${IMAGE}" jupyter
         echo "JupyterLab → http://${HOST_IP}:${JUPYTER_PORT} (local)"
         [[ -n "$PUBLIC_IP" ]] && echo "JupyterLab → http://${PUBLIC_IP}:${JUPYTER_PORT} (public)"
@@ -233,7 +236,8 @@ case "$SERVICE" in
             "${PACKAGES_ARGS[@]}" \
             "${GPU_ARGS[@]}" \
             -e "PASSWORD=$(whoami)" \
-            --name "ds-rstudio-${PROFILE}" \
+            --name "$CONTAINER_NAME" \
+            --hostname "$CONTAINER_NAME" \
             "${IMAGE}" rstudio
         echo "RStudio → http://${HOST_IP}:${RSTUDIO_PORT} (local)"
         [[ -n "$PUBLIC_IP" ]] && echo "RStudio → http://${PUBLIC_IP}:${RSTUDIO_PORT} (public)"
@@ -246,7 +250,8 @@ case "$SERVICE" in
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
             "${GPU_ARGS[@]}" \
-            --name "ds-claude-${PROFILE}" \
+            --name "$CONTAINER_NAME" \
+            --hostname "$CONTAINER_NAME" \
             "${IMAGE}" claude
         ;;
     bash)
@@ -257,7 +262,8 @@ case "$SERVICE" in
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
             "${GPU_ARGS[@]}" \
-            --name "ds-bash-${PROFILE}" \
+            --name "$CONTAINER_NAME" \
+            --hostname "$CONTAINER_NAME" \
             "${IMAGE}" bash
         ;;
     vscode)
@@ -271,7 +277,8 @@ case "$SERVICE" in
             "${GPU_ARGS[@]}" \
             -e "PASSWORD=$(whoami)" \
             -v "ds-vscode-config-${PROFILE}:/root/.local/share/code-server" \
-            --name "ds-vscode-${PROFILE}" \
+            --name "$CONTAINER_NAME" \
+            --hostname "$CONTAINER_NAME" \
             "${IMAGE}" vscode
         echo "VS Code Server → http://${HOST_IP}:${VSCODE_PORT} (local)"
         [[ -n "$PUBLIC_IP" ]] && echo "VS Code Server → http://${PUBLIC_IP}:${VSCODE_PORT} (public)"
