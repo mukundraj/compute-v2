@@ -26,6 +26,10 @@ fi
 
 set -a
 source config.env
+# Machine-local, untracked overrides (e.g. APT_PACKAGES). See config.local.env.example.
+# Auto-seed from the tracked example on first run; the copy stays gitignored.
+[ -f config.local.env ] || { [ -f config.local.env.example ] && cp config.local.env.example config.local.env; }
+[ -f config.local.env ] && source config.local.env
 set +a
 
 build_image() {

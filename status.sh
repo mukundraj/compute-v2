@@ -2,6 +2,8 @@
 
 set -a
 source config.env
+[ -f config.local.env ] || { [ -f config.local.env.example ] && cp config.local.env.example config.local.env; }
+[ -f config.local.env ] && source config.local.env
 set +a
 
 echo ""

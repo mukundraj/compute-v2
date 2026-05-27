@@ -33,6 +33,10 @@ fi
 
 set -a
 source config.env
+# Machine-local, untracked overrides (e.g. APT_PACKAGES). See config.local.env.example.
+# Auto-seed from the tracked example on first run; the copy stays gitignored.
+[ -f config.local.env ] || { [ -f config.local.env.example ] && cp config.local.env.example config.local.env; }
+[ -f config.local.env ] && source config.local.env
 set +a
 
 PROFILE=${1:-a}
@@ -147,6 +151,25 @@ if [ -n "${PACKAGES_DIR:-}" ]; then
         -e "R_LIBS_USER=/opt/r-libs"
     )
 fi
+
+# Extra apt system libs. The named .deb cache persists downloads so re-installs
+# after the first pull are fast/offline; entrypoint.sh runs the actual apt-get
+# install on every start (unpacked files live in the ephemeral overlay and can't
+# otherwise survive a restart). config.local.env is mounted rw and DS_PROFILE is
+# passed so the in-container apt wrapper can auto-record ad-hoc `apt install`s
+# into the matching APT_PACKAGES_<profile> line.
+if [ -f "${SCRIPT_DIR}/config.local.env" ]; then
+    PACKAGES_ARGS+=(
+        -v "ds-apt-cache-${PROFILE}:/var/cache/apt/archives"
+        -v "${SCRIPT_DIR}/config.local.env:/opt/config.local.env:Z"
+        -e "DS_PROFILE=${PROFILE}"
+    )
+fi
+
+# Per-profile APT_PACKAGES_<A|B> wins; APT_PACKAGES is the shared fallback.
+_apt_var="APT_PACKAGES_$(echo "$PROFILE" | tr '[:lower:]' '[:upper:]')"
+APT_PACKAGES="${!_apt_var:-${APT_PACKAGES:-}}"
+[ -n "${APT_PACKAGES:-}" ] && PACKAGES_ARGS+=(-e "APT_PACKAGES=${APT_PACKAGES}")
 
 # GPU passthrough (optional) — requires nvidia-container-toolkit + CDI spec on host.
 # --security-opt=label=disable is needed on SELinux hosts (RHEL/Fedora); harmless elsewhere.

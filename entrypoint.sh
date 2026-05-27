@@ -19,6 +19,54 @@ fi
 
 micromamba activate denv
 
+# Transparent apt / apt-get wrapper: records explicitly-requested packages from a
+# successful `install` into the mounted config.local.env (host file), so ad-hoc
+# installs persist — they're reinstalled automatically on the next start. Written
+# fresh each boot (the overlay is ephemeral); /usr/local/bin precedes /usr/bin in
+# PATH, so it shadows the real binaries. Disable by setting APT_AUTOSAVE=false.
+cat > /usr/local/bin/apt-get <<'WRAP'
+#!/bin/bash
+real="/usr/bin/$(basename "$0")"
+"$real" "$@"; rc=$?
+[ $rc -eq 0 ] || exit $rc
+[ "${APT_AUTOSAVE:-true}" = "true" ] || exit 0
+[ -w /opt/config.local.env ] || exit 0
+sub=""; pkgs=(); skip=0
+for a in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$a" in
+        -o|-t|-c|-a) skip=1; continue ;;
+        -*) continue ;;
+    esac
+    if [ -z "$sub" ]; then sub="$a"; continue; fi
+    pkgs+=("$a")
+done
+[ "$sub" = "install" ] && [ ${#pkgs[@]} -gt 0 ] || exit 0
+var="APT_PACKAGES_$(printf '%s' "${DS_PROFILE:-a}" | tr '[:lower:]' '[:upper:]')"
+cur=$(bash -c "source /opt/config.local.env 2>/dev/null; printf '%s' \"\${$var}\"")
+new=()
+for p in "${pkgs[@]}"; do
+    case " $cur " in *" $p "*) ;; *) new+=("$p") ;; esac
+done
+[ ${#new[@]} -gt 0 ] || exit 0
+printf '%s="${%s:-} %s"\n' "$var" "$var" "${new[*]}" >> /opt/config.local.env
+echo "[apt-autosave] recorded to config.local.env ($var): ${new[*]}"
+WRAP
+chmod +x /usr/local/bin/apt-get
+ln -sf /usr/local/bin/apt-get /usr/local/bin/apt
+hash -r
+
+# Extra apt system libs (APT_PACKAGES, resolved per-profile by run.sh). The
+# unpacked files land in the ephemeral overlay, so we reinstall on every start;
+# the .deb cache is a named volume (mounted at /var/cache/apt/archives), so after
+# the first pull this is fast and works offline. Keep cached .debs (no apt clean).
+# Call the real binary directly so these baseline installs aren't re-recorded.
+if [ -n "${APT_PACKAGES:-}" ]; then
+    echo "Installing APT_PACKAGES: ${APT_PACKAGES}"
+    /usr/bin/apt-get update -qq
+    /usr/bin/apt-get install -y --no-install-recommends ${APT_PACKAGES}
+fi
+
 # Persist Claude config inside the named volume at /root/.claude
 # by symlinking /root/.claude.json → /root/.claude/.claude.json
 ln -sf /root/.claude/.claude.json /root/.claude.json
