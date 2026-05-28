@@ -104,8 +104,11 @@ if [ -n "${GCP_VOLUMES:-}" ]; then
 elif [ -n "${GCP_SERVICE_ACCOUNT_KEY:-}" ]; then
     KEY_PATH=$(eval echo "${GCP_SERVICE_ACCOUNT_KEY}")
     # Resolve relative paths against the cwd where the command was invoked
-    # (podman -v requires an absolute host path).
-    [[ "$KEY_PATH" != /* ]] && KEY_PATH="${PWD}/${KEY_PATH#./}"
+    # (podman -v requires an absolute host path). $CALLER_PWD lets a wrapper
+    # that has to `cd` elsewhere first (e.g. the ansible-installed
+    # /etc/profile.d/zz-compute-v2-local.sh shortcuts) record the user's
+    # actual interactive cwd; falls back to $PWD when unset.
+    [[ "$KEY_PATH" != /* ]] && KEY_PATH="${CALLER_PWD:-$PWD}/${KEY_PATH#./}"
     if [ ! -f "$KEY_PATH" ]; then
         echo "Warning: GCP_SERVICE_ACCOUNT_KEY '${GCP_SERVICE_ACCOUNT_KEY}' not found at ${KEY_PATH} — skipping GCP credential mount." >&2
     else
