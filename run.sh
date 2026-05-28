@@ -190,17 +190,6 @@ fi
 
 echo "Profile $PROFILE: R=${R_VERSION} Python=${PYTHON_VERSION}"
 
-# Check if container is already running.
-# CONTAINER_NAME also doubles as the in-container --hostname below, so the
-# shell prompt reads e.g. root@ds-jupyter-a instead of a random ID hash.
-CONTAINER_NAME="ds-${SERVICE}-${PROFILE}"
-if podman ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
-    echo "Container '${CONTAINER_NAME}' is already running."
-    echo ""
-    bash "$(dirname "$0")/status.sh"
-    exit 0
-fi
-
 # Resolve host IP for display (prefer first non-loopback address)
 if [[ "$(uname)" == "Darwin" ]]; then
     HOST_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
@@ -211,6 +200,36 @@ HOST_IP=${HOST_IP:-localhost}
 
 # Resolve public IP (best-effort, silent on failure)
 PUBLIC_IP=$(curl -sf --max-time 3 https://checkip.amazonaws.com 2>/dev/null | tr -d '[:space:]')
+
+# Check if container is already running.
+# CONTAINER_NAME also doubles as the in-container --hostname below, so the
+# shell prompt reads e.g. root@ds-jupyter-a instead of a random ID hash.
+CONTAINER_NAME="ds-${SERVICE}-${PROFILE}"
+if podman ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+    echo "Container '${CONTAINER_NAME}' is already running."
+
+    # Reprint the connection URL using the live bound port. status.sh below
+    # can only show the literal config.env value (which is "auto" when
+    # pick_port() assigned the port at first start), so on its own it gives
+    # a useless "http://localhost:auto". Look up the real host port via
+    # `podman port` and emit the same banner the first-start path prints.
+    case "$SERVICE" in
+        jupyter) _cport=8888; _label="JupyterLab" ;;
+        rstudio) _cport=8787; _label="RStudio" ;;
+        vscode)  _cport=8080; _label="VS Code Server" ;;
+        *)       _cport=""; _label="" ;;
+    esac
+    if [[ -n "$_cport" ]]; then
+        _hport=$(podman port "$CONTAINER_NAME" "${_cport}/tcp" 2>/dev/null | head -n1 | awk -F: '{print $NF}')
+        if [[ -n "$_hport" ]]; then
+            echo "${_label} → http://${HOST_IP}:${_hport} (local)"
+            [[ -n "$PUBLIC_IP" ]] && echo "${_label} → http://${PUBLIC_IP}:${_hport} (public)"
+        fi
+    fi
+    echo ""
+    bash "$(dirname "$0")/status.sh"
+    exit 0
+fi
 
 case "$SERVICE" in
     jupyter)
