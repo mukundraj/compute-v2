@@ -36,8 +36,12 @@ build_image() {
     local R_VERSION=$1
     local PYTHON_VERSION=$2
     local TAG="ds-env-r${R_VERSION}-py${PYTHON_VERSION}"
+    # Build-ID stamp: passed into the image as IMAGE_BUILD_ID and persisted
+    # into /opt/conda/envs/denv/.image-build-id, so entrypoint.sh can detect
+    # when ds-conda-envs-<profile> is stale (built against an older image).
+    local BUILD_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 
-    echo "Building $TAG..."
+    echo "Building $TAG (build ID: $BUILD_ID)..."
     ISOLATION_OPT=""
     [[ "$(uname)" == "Linux" ]] && ISOLATION_OPT="--isolation=chroot"
 
@@ -47,6 +51,7 @@ build_image() {
         --platform linux/amd64 \
         --build-arg R_VERSION=${R_VERSION} \
         --build-arg PYTHON_VERSION=${PYTHON_VERSION} \
+        --build-arg IMAGE_BUILD_ID=${BUILD_ID} \
         -f Containerfile \
         -t ${TAG} \
         .

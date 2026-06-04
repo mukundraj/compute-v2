@@ -15,6 +15,26 @@ if [ ! -x /opt/conda/envs/denv/bin/python ]; then
         --index-url https://download.pytorch.org/whl/cu124
     micromamba run -n denv python -m ipykernel install \
         --name denv --display-name "Python (denv)" --sys-prefix
+    # Stamp the recreated env with the current image's build ID so future
+    # restarts can detect drift the same way as image-initialized volumes.
+    echo "${IMAGE_BUILD_ID:-unknown}" > /opt/conda/envs/denv/.image-build-id
+fi
+
+# Detect stale conda-envs volume: the env's stamp predates the image's stamp.
+# Happens when the image was rebuilt but the ds-conda-envs-<profile> volume
+# was carried forward, so the user keeps seeing the old env. Recover with:
+# stop, podman volume rm ds-conda-envs-<profile>, restart — or use the
+# --reset-env flag on run.sh.
+if [ -f /opt/conda/envs/denv/.image-build-id ]; then
+    VOLUME_BUILD_ID=$(cat /opt/conda/envs/denv/.image-build-id)
+    if [ "$VOLUME_BUILD_ID" != "${IMAGE_BUILD_ID:-unknown}" ]; then
+        echo ""
+        echo "WARNING: ds-conda-envs volume was built against image ${VOLUME_BUILD_ID:-unknown},"
+        echo "         current image is ${IMAGE_BUILD_ID:-unknown}."
+        echo "         If you see broken imports or missing packages, reset the env:"
+        echo "           on the host: ./run.sh <profile> <service> --reset-env"
+        echo ""
+    fi
 fi
 
 micromamba activate denv

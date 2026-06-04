@@ -39,8 +39,21 @@ source config.env
 [ -f config.local.env ] && source config.local.env
 set +a
 
-PROFILE=${1:-a}
-SERVICE=${2:-jupyter}
+# Parse flags out of positional args. --reset-env wipes the persistent
+# ds-conda-envs-<profile> volume before starting, so entrypoint.sh's
+# first-run branch repopulates denv from the current image. Useful when
+# the volume has rotted (libexpat ABI drift, missing jupyter_core, etc.)
+# and a plain restart keeps re-mounting the same broken env.
+RESET_ENV=false
+POSITIONAL=()
+for arg in "$@"; do
+    case "$arg" in
+        --reset-env) RESET_ENV=true ;;
+        *) POSITIONAL+=("$arg") ;;
+    esac
+done
+PROFILE=${POSITIONAL[0]:-a}
+SERVICE=${POSITIONAL[1]:-jupyter}
 
 case "$PROFILE" in
     a)
@@ -58,10 +71,22 @@ case "$PROFILE" in
         VSCODE_PORT=$VSCODE_PORT_B
         ;;
     *)
-        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode]"
+        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode] [--reset-env]"
         exit 1
         ;;
 esac
+
+if [ "$RESET_ENV" = "true" ]; then
+    CONTAINER_NAME="ds-${SERVICE}-${PROFILE}"
+    VOLUME_NAME="ds-conda-envs-${PROFILE}"
+    echo "Resetting ${VOLUME_NAME}..."
+    podman stop "$CONTAINER_NAME" 2>/dev/null || true
+    podman rm   "$CONTAINER_NAME" 2>/dev/null || true
+    # --force lets us recover from missing-lock-file states (e.g. after a
+    # VM reboot wiped /run/user/<uid>/) that would otherwise abort the rm.
+    podman volume rm --force "$VOLUME_NAME" 2>/dev/null || true
+    echo "Done. Continuing normal start; entrypoint will recreate denv."
+fi
 
 # Assign the first available port in 8901-8920; exits if none are free.
 pick_port() {

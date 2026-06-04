@@ -4,8 +4,15 @@ FROM docker.io/rocker/rstudio:${R_VERSION}
 # Re-declare after FROM (ARGs reset after each FROM)
 ARG R_VERSION=4.4.3
 ARG PYTHON_VERSION=3.12
+# IMAGE_BUILD_ID identifies which build produced this image; build.sh passes
+# a UTC timestamp. The value is baked into the image as an ENV (so it survives
+# the named-volume mount over /opt/conda/envs) and also written into the env
+# itself (so it travels with the volume). entrypoint.sh compares the two on
+# every start and warns when the volume is stale relative to the image.
+ARG IMAGE_BUILD_ID=unknown
 ENV R_VERSION=${R_VERSION}
 ENV PYTHON_VERSION=${PYTHON_VERSION}
+ENV IMAGE_BUILD_ID=${IMAGE_BUILD_ID}
 
 # ---------- micromamba (Python only) ----------
 ENV MAMBA_ROOT_PREFIX=/opt/conda
@@ -65,6 +72,13 @@ RUN micromamba install -n denv -y \
       google-cloud-storage \
       gcsfs && \
     micromamba clean --all --yes
+
+# ---------- image build-ID stamp ----------
+# Written into the env so it gets initialized into ds-conda-envs-<profile>
+# the first time the volume populates from the image. entrypoint.sh then
+# compares this file against $IMAGE_BUILD_ID (baked into the running image
+# as an ENV — not shadowed by the volume mount) on every start.
+RUN echo "${IMAGE_BUILD_ID}" > /opt/conda/envs/denv/.image-build-id
 
 # ---------- PyTorch with CUDA 12.4 wheels ----------
 RUN micromamba run -n denv pip install --no-cache-dir \
