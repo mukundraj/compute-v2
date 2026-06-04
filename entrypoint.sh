@@ -15,6 +15,12 @@ if [ ! -x /opt/conda/envs/denv/bin/python ]; then
         --index-url https://download.pytorch.org/whl/cu124
     micromamba run -n denv python -m ipykernel install \
         --name denv --display-name "Python (denv)" --sys-prefix
+    # Re-register the R Jupyter kernel into the freshly-recreated denv share
+    # dir. IRkernel is installed against rocker's system R (Containerfile),
+    # which --reset-env doesn't touch, so the package is still present — only
+    # the kernel spec under /opt/conda/envs/denv/share/jupyter/kernels/ir/
+    # needs rewriting.
+    Rscript -e "IRkernel::installspec(user=FALSE, prefix='/opt/conda/envs/denv')"
     # Stamp the recreated env with the current image's build ID so future
     # restarts can detect drift the same way as image-initialized volumes.
     echo "${IMAGE_BUILD_ID:-unknown}" > /opt/conda/envs/denv/.image-build-id

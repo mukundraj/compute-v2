@@ -88,7 +88,7 @@ RUN micromamba run -n denv pip install --no-cache-dir \
 ENV PATH=$MAMBA_ROOT_PREFIX/envs/denv/bin:$PATH
 
 # ---------- R packages (using rocker's system R) ----------
-RUN R -e "install.packages(c('tidyverse', 'IRkernel', \
+RUN R -e "install.packages(c('tidyverse', 'IRkernel', 'languageserver', \
                              'ggplot2', 'cowplot', \
                              'qs2','viridis', \
                              'rstudioapi', \
@@ -101,7 +101,7 @@ RUN R -e "install.packages(c('tidyverse', 'IRkernel', \
 RUN R -e "BiocManager::install(c('GenomicRanges', 'SummarizedExperiment', 'DESeq2', 'fgsea', 'zellkonverter'), ask = FALSE)"
 
 # ---------- verify R packages ----------
-RUN R -e "pkgs <- c('tidyverse','IRkernel','ggplot2','cowplot','qs2','viridis', \
+RUN R -e "pkgs <- c('tidyverse','IRkernel','languageserver','ggplot2','cowplot','qs2','viridis', \
                      'rstudioapi','Seurat','SeuratObject','BiocManager','renv','tidyr', \
                      'anndata','GenomicRanges','SummarizedExperiment','DESeq2','fgsea','zellkonverter'); \
           missing <- pkgs[!sapply(pkgs, requireNamespace, quietly=TRUE)]; \
@@ -132,7 +132,8 @@ RUN curl -fsSL https://code-server.dev/install.sh | sh
 RUN code-server \
       --extensions-dir /opt/code-server-extensions \
       --install-extension ms-python.python \
-      --install-extension ms-toolsai.jupyter
+      --install-extension ms-toolsai.jupyter \
+      --install-extension reditorsupport.r
 
 # ---------- Claude Code (last so version bumps rebuild only this layer) ----------
 RUN pnpm add -g @anthropic-ai/claude-code
