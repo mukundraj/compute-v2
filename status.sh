@@ -17,11 +17,35 @@ echo "-----------------------------------------------------"
 podman images --filter "reference=ds-env-*" \
     --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
 echo ""
-echo "Port map:"
-echo "  Profile A → JupyterLab: http://localhost:${JUPYTER_PORT_A}"
-echo "  Profile A → RStudio:    http://localhost:${RSTUDIO_PORT_A}"
-echo "  Profile A → VS Code:    http://localhost:${VSCODE_PORT_A}"
-echo "  Profile B → JupyterLab: http://localhost:${JUPYTER_PORT_B}"
-echo "  Profile B → RStudio:    http://localhost:${RSTUDIO_PORT_B}"
-echo "  Profile B → VS Code:    http://localhost:${VSCODE_PORT_B}"
-echo ""
+
+# Port map: print URLs for *running* containers using the live host port
+# from `podman ps`, not the literal config.env value — that value is
+# typically "auto" (resolved by run.sh's pick_port() at start time), which
+# would otherwise show up as http://localhost:auto here. Mirrors the
+# (local) / (public) banner run.sh prints at first start.
+running=$(podman ps --filter "name=ds-" --format "{{.Names}}\t{{.Ports}}" 2>/dev/null)
+if [ -n "$running" ]; then
+    # Host IP for the (local) line — first non-loopback address on Linux,
+    # ipconfig on Darwin, "localhost" if both fail.
+    if [[ "$(uname)" == "Darwin" ]]; then
+        HOST_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
+    else
+        HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+    HOST_IP=${HOST_IP:-localhost}
+
+    # Public IP, best-effort. Suppressed entirely when curl fails or times
+    # out (no MTA on GCP images means we can't email anyway).
+    PUBLIC_IP=$(curl -sf --max-time 3 https://checkip.amazonaws.com 2>/dev/null | tr -d '[:space:]')
+
+    echo "Port map:"
+    while IFS=$'\t' read -r name ports; do
+        # Extract host port from patterns like "0.0.0.0:8901->8888/tcp".
+        host_port=$(echo "$ports" | grep -oE '0\.0\.0\.0:[0-9]+' | head -1 | cut -d: -f2)
+        if [ -n "$host_port" ]; then
+            echo "  ${name} → http://${HOST_IP}:${host_port} (local)"
+            [ -n "$PUBLIC_IP" ] && echo "  ${name} → http://${PUBLIC_IP}:${host_port} (public)"
+        fi
+    done <<< "$running"
+    echo ""
+fi
