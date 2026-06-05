@@ -332,7 +332,12 @@ case "$SERVICE" in
         if [[ -n "$PUBLIC_IP" ]]; then
             echo ""
             echo "First, enter this in your laptop terminal:"
-            echo "  ssh -N -L ${VSCODE_PORT}:localhost:${VSCODE_PORT} $(whoami)@${PUBLIC_IP}"
+            # SUDO_USER survives `sudo -i` via sudo's default env_keep, so when
+            # run.sh runs under the ansible wrapper's auto-redirect
+            # (`sudo -iu <name>ai vscode`) we still print the original human's
+            # username — the one that's actually SSH-reachable via OS Login.
+            # Falls back to whoami for direct (non-sudo) invocations.
+            echo "  ssh -N -L ${VSCODE_PORT}:localhost:${VSCODE_PORT} ${SUDO_USER:-$(whoami)}@${PUBLIC_IP}"
             echo "Then, enter this in your browser:"
             echo "  http://localhost:${VSCODE_PORT}"
         fi

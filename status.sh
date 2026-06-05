@@ -60,7 +60,12 @@ if [ -n "$running" ]; then
             host_port=$(echo "$ports" | grep -oE '0\.0\.0\.0:[0-9]+' | head -1 | cut -d: -f2)
             [ -n "$host_port" ] || continue
             echo "${name}: to connect from your laptop —"
-            echo "  ssh -N -L ${host_port}:localhost:${host_port} $(whoami)@${PUBLIC_IP}"
+            # SUDO_USER survives `sudo -i` via sudo's default env_keep, so when
+            # status.sh runs under the ansible wrapper's auto-redirect
+            # (`sudo -iu <name>ai status vscode`) we still print the original
+            # human's username — the one that's actually SSH-reachable via OS
+            # Login. Falls back to whoami for direct (non-sudo) invocations.
+            echo "  ssh -N -L ${host_port}:localhost:${host_port} ${SUDO_USER:-$(whoami)}@${PUBLIC_IP}"
             echo "Then open in your browser:"
             echo "  http://localhost:${host_port}"
             echo ""
