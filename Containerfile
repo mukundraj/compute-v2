@@ -136,7 +136,11 @@ RUN code-server \
       --install-extension reditorsupport.r
 
 # ---------- Claude Code (last so version bumps rebuild only this layer) ----------
-RUN pnpm add -g @anthropic-ai/claude-code
+# --allow-build is required on pnpm 10+ — postinstall scripts of dependencies
+# are blocked by default, and claude-code's postinstall is what fetches the
+# platform-native binary. Without this flag the wrapper installs but every
+# `claude` invocation errors with "claude native binary not installed".
+RUN pnpm add -g --allow-build=@anthropic-ai/claude-code @anthropic-ai/claude-code
 
 # ---------- entrypoint ----------
 COPY entrypoint.sh /entrypoint.sh
