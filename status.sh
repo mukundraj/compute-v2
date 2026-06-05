@@ -48,4 +48,22 @@ if [ -n "$running" ]; then
         fi
     done <<< "$running"
     echo ""
+
+    # VS Code Server needs a localhost origin (the browser sends Origin:
+    # http://<remote>:port and code-server rejects it as cross-origin), so
+    # mirror the "ssh -L" + browser hint that run.sh prints at first start
+    # for any running ds-vscode-* container. Only emitted when a public IP
+    # resolved; without it the tunnel command can't be constructed.
+    if [ -n "$PUBLIC_IP" ]; then
+        while IFS=$'\t' read -r name ports; do
+            [[ "$name" == ds-vscode-* ]] || continue
+            host_port=$(echo "$ports" | grep -oE '0\.0\.0\.0:[0-9]+' | head -1 | cut -d: -f2)
+            [ -n "$host_port" ] || continue
+            echo "${name}: to connect from your laptop —"
+            echo "  ssh -N -L ${host_port}:localhost:${host_port} $(whoami)@${PUBLIC_IP}"
+            echo "Then open in your browser:"
+            echo "  http://localhost:${host_port}"
+            echo ""
+        done <<< "$running"
+    fi
 fi
