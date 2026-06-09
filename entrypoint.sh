@@ -3,8 +3,25 @@ set -e
 
 eval "$(micromamba shell hook -s bash)"
 
-# First-run: if conda-envs dir is mounted but denv doesn't exist, recreate it
-if [ ! -x /opt/conda/envs/denv/bin/python ]; then
+# (Re)build denv unless it is present AND importable. Guarding only on
+# `-x bin/python` (the old check) is fooled by an interrupted first build: if
+# the container is killed mid `micromamba create`, it leaves an executable but
+# broken python (missing stdlib/packages), the guard treats it as "done", and
+# the user is stranded with no working Jupyter kernels until someone manually
+# wipes the volume. The completion stamp (.image-build-id, written as the LAST
+# step below) marks a fully-built env, but guarding on the stamp alone would
+# clobber a healthy env created by an older entrypoint that predates it — so we
+# probe the interpreter instead, which is correct for both cases.
+denv_healthy() {
+    [ -x /opt/conda/envs/denv/bin/python ] || return 1
+    /opt/conda/envs/denv/bin/python -c 'import types, ipykernel' >/dev/null 2>&1
+}
+if ! denv_healthy; then
+    if [ -e /opt/conda/envs/denv ]; then
+        echo "Found an incomplete/broken denv; removing and rebuilding..."
+        micromamba env remove -n denv -y >/dev/null 2>&1 || true
+        rm -rf /opt/conda/envs/denv
+    fi
     echo "First run: creating denv (this takes a few minutes)..."
     micromamba create -n denv -y \
         python="${PYTHON_VERSION}" \
