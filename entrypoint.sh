@@ -109,7 +109,17 @@ fi
 if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
     echo "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /usr/local/lib/R/etc/Renviron.site
     echo "export GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /etc/profile.d/z-gcp.sh
-    gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}" 2>/dev/null || true
+    # Set gcloud's active account from the mounted key. Non-fatal (ADC via the
+    # env var above works regardless), but log the outcome — a silent failure
+    # here leaves `gcloud` defaulting to the VM's metadata-server SA, which is
+    # confusing to debug from inside the container.
+    if _gcloud_out=$(gcloud auth activate-service-account \
+            --key-file="${GOOGLE_APPLICATION_CREDENTIALS}" 2>&1); then
+        echo "gcloud: activated service account from ${GOOGLE_APPLICATION_CREDENTIALS}"
+    else
+        echo "WARNING: gcloud service-account activation failed (continuing): ${_gcloud_out}"
+    fi
+    unset _gcloud_out
 fi
 for _var in GCS_READ_PATHS GCS_WRITE_PATHS; do
     _val="${!_var}"
