@@ -148,6 +148,16 @@ if [ -n "${GCP_ENV:-}" ]; then
     GCP_ARGS+=(${GCP_ENV})
 fi
 
+# Extra bind mounts (e.g. supplementary data disks). Word-split
+# intentionally, like GCP_VOLUMES — no spaces within individual values.
+# Settable from the environment (a login shell that exports it survives into
+# the config sourcing above unless config.local.env redefines it) or from
+# config.local.env directly.
+if [ -n "${EXTRA_VOLUMES:-}" ]; then
+    # shellcheck disable=SC2206
+    GCP_ARGS+=(${EXTRA_VOLUMES})
+fi
+
 # GCP bucket access — parse GCP_BUCKET_ACCESS into comma-separated path lists.
 # Comma delimiter avoids word-splitting when the value is passed to podman run.
 if [ -n "${GCP_BUCKET_ACCESS:-}" ]; then
