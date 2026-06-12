@@ -44,13 +44,25 @@ set +a
 # first-run branch repopulates denv from the current image. Useful when
 # the volume has rotted (libexpat ABI drift, missing jupyter_core, etc.)
 # and a plain restart keeps re-mounting the same broken env.
+# --memory <val> (or --memory=<val>) caps the container's memory for this
+# launch, overriding CONTAINER_MEMORY from config.env/config.local.env;
+# the (system RAM - 2G) ceiling below still applies.
 RESET_ENV=false
+MEMORY_FLAG=""
 POSITIONAL=()
-for arg in "$@"; do
-    case "$arg" in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --reset-env) RESET_ENV=true ;;
-        *) POSITIONAL+=("$arg") ;;
+        --memory)
+            if [ $# -lt 2 ]; then
+                echo "Error: --memory requires a value (e.g. --memory 16G)" >&2
+                exit 1
+            fi
+            MEMORY_FLAG="$2"; shift ;;
+        --memory=*) MEMORY_FLAG="${1#--memory=}" ;;
+        *) POSITIONAL+=("$1") ;;
     esac
+    shift
 done
 PROFILE=${POSITIONAL[0]:-a}
 SERVICE=${POSITIONAL[1]:-jupyter}
@@ -71,7 +83,7 @@ case "$PROFILE" in
         VSCODE_PORT=$VSCODE_PORT_B
         ;;
     *)
-        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode] [--reset-env]"
+        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode] [--reset-env] [--memory <size>]"
         exit 1
         ;;
 esac
@@ -223,6 +235,56 @@ if [ "${GPU_ENABLED:-false}" = "true" ]; then
                --security-opt=label=disable)
 fi
 
+# ---- Container memory limit ----
+# Hard ceiling: total system RAM minus 2G host headroom. "auto" (the
+# config.env default) resolves to exactly that ceiling; an explicit value
+# (--memory flag > CONTAINER_MEMORY in config.local.env > config.env) is
+# capped to it, with a message, so a container can never starve the host.
+mem_to_mib() {
+    local v num unit
+    v=$(echo "$1" | tr '[:lower:]' '[:upper:]')
+    if [[ "$v" =~ ^([0-9]+)(B|K|KB|M|MB|G|GB|T|TB)?$ ]]; then
+        num="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[2]}"
+        case "$unit" in
+            B)       echo $(( num / 1048576 )) ;;
+            K|KB)    echo $(( num / 1024 )) ;;
+            ""|M|MB) echo "$num" ;;
+            G|GB)    echo $(( num * 1024 )) ;;
+            T|TB)    echo $(( num * 1024 * 1024 )) ;;
+        esac
+    else
+        echo "Error: unparseable memory value '$1' (expected e.g. 16G, 1500M)" >&2
+        return 1
+    fi
+}
+mib_to_human() {
+    if (( $1 % 1024 == 0 )); then echo "$(( $1 / 1024 ))G"; else echo "${1}M"; fi
+}
+if [[ "$(uname)" == "Darwin" ]]; then
+    TOTAL_MIB=$(( $(sysctl -n hw.memsize) / 1048576 ))
+else
+    TOTAL_MIB=$(( $(awk '/^MemTotal:/{print $2}' /proc/meminfo) / 1024 ))
+fi
+CAP_MIB=$(( TOTAL_MIB - 2048 ))
+MEM_REQ="${MEMORY_FLAG:-${CONTAINER_MEMORY:-auto}}"
+MEM_ARGS=()
+if [ "$CAP_MIB" -le 0 ]; then
+    echo "Warning: system RAM ($(mib_to_human "$TOTAL_MIB")) leaves nothing below the 2G host headroom — skipping container memory limit." >&2
+else
+    if [ "$MEM_REQ" = "auto" ]; then
+        MEM_MIB=$CAP_MIB
+        echo "Container memory limit: $(mib_to_human "$MEM_MIB") (system RAM $(mib_to_human "$TOTAL_MIB") minus 2G host headroom)"
+    else
+        MEM_MIB=$(mem_to_mib "$MEM_REQ") || exit 1
+        if [ "$MEM_MIB" -gt "$CAP_MIB" ]; then
+            echo "Memory: requested ${MEM_REQ} exceeds system RAM ($(mib_to_human "$TOTAL_MIB")) minus 2G host headroom — capping to $(mib_to_human "$CAP_MIB")."
+            MEM_MIB=$CAP_MIB
+        fi
+        echo "Container memory limit: $(mib_to_human "$MEM_MIB")"
+    fi
+    MEM_ARGS=(--memory "${MEM_MIB}m")
+fi
+
 echo "Profile $PROFILE: R=${R_VERSION} Python=${PYTHON_VERSION}"
 
 # Resolve host IP for display (prefer first non-loopback address)
@@ -276,6 +338,7 @@ case "$SERVICE" in
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
             "${GPU_ARGS[@]}" \
+            "${MEM_ARGS[@]}" \
             -e "JUPYTER_PASSWORD=$(whoami)" \
             --name "$CONTAINER_NAME" \
             --hostname "$CONTAINER_NAME" \
@@ -292,6 +355,7 @@ case "$SERVICE" in
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
             "${GPU_ARGS[@]}" \
+            "${MEM_ARGS[@]}" \
             -e "PASSWORD=$(whoami)" \
             --name "$CONTAINER_NAME" \
             --hostname "$CONTAINER_NAME" \
@@ -307,6 +371,7 @@ case "$SERVICE" in
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
             "${GPU_ARGS[@]}" \
+            "${MEM_ARGS[@]}" \
             --name "$CONTAINER_NAME" \
             --hostname "$CONTAINER_NAME" \
             "${IMAGE}" claude
@@ -319,6 +384,7 @@ case "$SERVICE" in
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
             "${GPU_ARGS[@]}" \
+            "${MEM_ARGS[@]}" \
             --name "$CONTAINER_NAME" \
             --hostname "$CONTAINER_NAME" \
             "${IMAGE}" bash
@@ -332,6 +398,7 @@ case "$SERVICE" in
             "${GCP_ARGS[@]}" \
             "${PACKAGES_ARGS[@]}" \
             "${GPU_ARGS[@]}" \
+            "${MEM_ARGS[@]}" \
             -e "PASSWORD=$(whoami)" \
             -v "ds-vscode-config-${PROFILE}:/root/.local/share/code-server" \
             --name "$CONTAINER_NAME" \
@@ -353,7 +420,7 @@ case "$SERVICE" in
         fi
         ;;
     *)
-        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode]"
+        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode] [--reset-env] [--memory <size>]"
         exit 1
         ;;
 esac
