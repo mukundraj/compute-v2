@@ -83,6 +83,12 @@ chmod +x build.sh run.sh stop.sh status.sh
 > (`ds-claude-config-<profile>`), isolated from the host. Run `/login` once inside the
 > container to authenticate. Auth persists across restarts.
 
+> **RStudio login:** username `root`, password your local username (`whoami`). Rootless
+> podman is why the username is `root`: rocker's `init_userconf.sh` auto-detects rootless
+> mode (via `/proc/self/uid_map`), deletes the usual `rstudio` user, allows UID-0 login
+> (`auth-minimum-user-id=0`), and applies `PASSWORD` to root — who is mapped to your
+> host user anyway. (Under rootful docker/podman the username would be `rstudio`.)
+
 > **VS Code Server login:** The password is your local username (`whoami`). VS Code
 > extensions and settings are stored in a named Podman volume
 > (`ds-vscode-config-<profile>`) and persist across restarts.
