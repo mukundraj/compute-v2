@@ -348,6 +348,18 @@ case "$SERVICE" in
         ;;
     rstudio)
         echo "Starting RStudio (profile $PROFILE)..."
+        # The image entrypoint starts RStudio via rocker's s6 supervisor
+        # (`exec /init`). Under ROOTLESS podman, s6-overlay-preinit can't chown
+        # /var/run/s6 ("Operation not permitted" inside the user namespace) and
+        # aborts, so the container exits immediately. When rootless, bypass s6
+        # and run rserver in the foreground (same shape as jupyter/vscode): set
+        # the login passwords and allow root login (UID 0, which under rootless
+        # is just the mapped host user). Rootful keeps the original s6 path.
+        if [[ "$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" == "true" ]]; then
+            RSTUDIO_ENTRY=(--entrypoint bash "${IMAGE}" -c 'mkdir -p /etc/rstudio; echo "session-default-working-dir=${WORK_MOUNT:-/home/workdir}" >> /etc/rstudio/rsession.conf; echo "auth-minimum-user-id=0" >> /etc/rstudio/rserver.conf; echo "root:${PASSWORD:-root}" | chpasswd; echo "rstudio:${PASSWORD:-rstudio}" | chpasswd; exec /usr/lib/rstudio-server/bin/rserver --server-daemonize 0')
+        else
+            RSTUDIO_ENTRY=("${IMAGE}" rstudio)
+        fi
         podman run -d --rm \
             -p "0.0.0.0:${RSTUDIO_PORT}:8787" \
             "${COMMON_VOLUMES[@]}" \
@@ -359,7 +371,7 @@ case "$SERVICE" in
             -e "PASSWORD=$(whoami)" \
             --name "$CONTAINER_NAME" \
             --hostname "$CONTAINER_NAME" \
-            "${IMAGE}" rstudio
+            "${RSTUDIO_ENTRY[@]}"
         echo "RStudio → http://${HOST_IP}:${RSTUDIO_PORT} (local)"
         [[ -n "$PUBLIC_IP" ]] && echo "RStudio → http://${PUBLIC_IP}:${RSTUDIO_PORT} (public)"
         ;;
