@@ -235,7 +235,7 @@ makeuser() {
 #   4. an lsblk SERIAL match (GCP sets serial == device name; useful when
 #      the by-id symlink is missing on some images)
 # Always returns the whole-disk device, never a partition — partition-aware
-# callers (refreshdisk) walk back down via lsblk.
+# callers (growdisk) walk back down via lsblk.
 _resolve_disk() {
     local arg="$1"
     local dev=""
@@ -432,9 +432,9 @@ unmountdisk() {
 # (if there is one) and the ext4 filesystem in place. Online-safe — the
 # disk can stay mounted. Handles raw ext4 (no partition table, as written
 # by formatdisk) and single-partition disks.
-refreshdisk() {
+growdisk() {
     if [[ -z "$1" ]]; then
-        echo "Usage: refreshdisk <disk_name>" >&2
+        echo "Usage: growdisk <disk_name>" >&2
         return 1
     fi
 
