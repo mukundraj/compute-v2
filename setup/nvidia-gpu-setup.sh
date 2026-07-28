@@ -31,9 +31,10 @@ set -euo pipefail
 # ---- Configurable ---------------------------------------------------------
 
 # Pin a known-good driver version. The .run installer for this version is
-# fetched directly from NVIDIA's downloads server. To upgrade later, just
-# change this value.
-NVIDIA_DRIVER_VERSION="${NVIDIA_DRIVER_VERSION:-550.127.05}"
+# fetched directly from NVIDIA's downloads server. 570.x builds on Debian 13 /
+# kernel 6.12 and serves the image's CUDA 12.4 / PyTorch cu124 stack. To change
+# it, edit this value or override via the NVIDIA_DRIVER_VERSION env var.
+NVIDIA_DRIVER_VERSION="${NVIDIA_DRIVER_VERSION:-570.133.20}"
 
 # ---- Helpers --------------------------------------------------------------
 
