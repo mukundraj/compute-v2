@@ -63,6 +63,7 @@ RUN micromamba install -n denv -y \
 RUN micromamba install -n denv -y \
       google-cloud-sdk \
       google-cloud-storage \
+      google-crc32c \
       gcsfs && \
     micromamba clean --all --yes
 
@@ -72,6 +73,13 @@ RUN micromamba run -n denv pip install --no-cache-dir \
       --index-url https://download.pytorch.org/whl/cu124
 
 ENV PATH=$MAMBA_ROOT_PREFIX/envs/denv/bin:$PATH
+
+# gcloud runs its bundled Python with site-packages DISABLED by default, so it
+# can't import the conda-installed google-crc32c and `gcloud storage cp` skips
+# every integrity-checked copy ("fast hash calculation tools are not installed").
+# Enabling site-packages lets gcloud find the fast CRC32C hasher already present
+# in denv. Load-bearing fix; see also the emitters in entrypoint.sh.
+ENV CLOUDSDK_PYTHON_SITEPACKAGES=1
 
 # ---------- R packages (using rocker's system R) ----------
 RUN R -e "install.packages(c('tidyverse', 'IRkernel', 'languageserver', \

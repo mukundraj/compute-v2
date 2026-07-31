@@ -26,7 +26,7 @@ if ! denv_healthy; then
     micromamba create -n denv -y \
         python="${PYTHON_VERSION}" \
         jupyterlab notebook ipykernel numpy pandas matplotlib scikit-learn \
-        google-cloud-sdk google-cloud-storage gcsfs
+        google-cloud-sdk google-cloud-storage google-crc32c gcsfs
     micromamba run -n denv pip install --no-cache-dir \
         torch torchvision \
         --index-url https://download.pytorch.org/whl/cu124
@@ -104,6 +104,14 @@ if command -v claude &>/dev/null; then
 else
     echo "WARNING: claude not found inside image."
 fi
+
+# gcloud's bundled Python runs without site-packages by default, so it can't
+# import the conda-installed google-crc32c and `gcloud storage cp` skips
+# integrity-checked copies. Enable site-packages for all shells + R sessions
+# (the Containerfile ENV covers PID 1; these reach RStudio terminals/R, which
+# get a reset environment). Unconditional — gcloud is always present in denv.
+echo "CLOUDSDK_PYTHON_SITEPACKAGES=1" >> /usr/local/lib/R/etc/Renviron.site
+echo "export CLOUDSDK_PYTHON_SITEPACKAGES=1" >> /etc/profile.d/z-gcp.sh
 
 # Forward GCP credentials to all services (terminals + R sessions)
 if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
