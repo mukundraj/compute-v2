@@ -362,15 +362,19 @@ case "$SERVICE" in
         # The image entrypoint starts RStudio via rocker's s6 supervisor
         # (`exec /init`). Under ROOTLESS podman, s6-overlay-preinit can't chown
         # /var/run/s6 ("Operation not permitted" inside the user namespace) and
-        # aborts, so the container exits immediately. When rootless, bypass s6
-        # and run rserver in the foreground (same shape as jupyter/vscode): set
-        # the login passwords and allow root login (UID 0, which under rootless
-        # is just the mapped host user). Rootful keeps the original s6 path.
-        if [[ "$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" == "true" ]]; then
-            RSTUDIO_ENTRY=(--entrypoint bash "${IMAGE}" -c 'mkdir -p /etc/rstudio; echo "session-default-working-dir=${WORK_MOUNT:-/home/workdir}" >> /etc/rstudio/rsession.conf; echo "auth-minimum-user-id=0" >> /etc/rstudio/rserver.conf; echo "root:${PASSWORD:-root}" | chpasswd; echo "rstudio:${PASSWORD:-rstudio}" | chpasswd; exec /usr/lib/rstudio-server/bin/rserver --server-daemonize 0')
-        else
-            RSTUDIO_ENTRY=("${IMAGE}" rstudio)
-        fi
+        # aborts, so the container exits immediately. entrypoint.sh handles this
+        # by running rserver directly in the foreground when COMPUTE_V2_ROOTLESS
+        # is true (same shape as jupyter/vscode); rootful keeps the s6 path.
+        #
+        # We pass the rootless flag rather than overriding --entrypoint, so
+        # entrypoint.sh STILL RUNS and performs the GCP credential/env setup
+        # (gcloud activate-service-account + z-gcp.sh + Renviron.site) that the
+        # RStudio terminal and R sessions depend on. The old code used
+        # `--entrypoint bash ... exec rserver`, which bypassed entrypoint.sh
+        # entirely and left rstudio with the metadata SA active and no
+        # GOOGLE_APPLICATION_CREDENTIALS / CLOUDSDK_PYTHON_SITEPACKAGES in the
+        # terminal — unlike jupyter/vscode, which launch the entrypoint normally.
+        RSTUDIO_ROOTLESS=$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)
         podman run -d --rm \
             -p "0.0.0.0:${RSTUDIO_PORT}:8787" \
             "${COMMON_VOLUMES[@]}" \
@@ -380,9 +384,10 @@ case "$SERVICE" in
             "${GPU_ARGS[@]}" \
             "${MEM_ARGS[@]}" \
             -e "PASSWORD=$(whoami)" \
+            -e "COMPUTE_V2_ROOTLESS=${RSTUDIO_ROOTLESS}" \
             --name "$CONTAINER_NAME" \
             --hostname "$CONTAINER_NAME" \
-            "${RSTUDIO_ENTRY[@]}"
+            "${IMAGE}" rstudio
         echo "RStudio → http://${HOST_IP}:${RSTUDIO_PORT} (local)"
         [[ -n "$PUBLIC_IP" ]] && echo "RStudio → http://${PUBLIC_IP}:${RSTUDIO_PORT} (public)"
         ;;

@@ -171,7 +171,25 @@ case "$1" in
     echo "Starting RStudio Server on port 8787..."
     mkdir -p /etc/rstudio
     echo "session-default-working-dir=${WORK_MOUNT:-/home/workdir}" >> /etc/rstudio/rsession.conf
-    exec /init
+    # Under ROOTLESS podman, rocker's s6 supervisor (`exec /init`) fails:
+    # s6-overlay-preinit can't chown /var/run/s6 inside the user namespace and
+    # aborts, exiting the container. So bypass s6 and run rserver directly in the
+    # foreground (same shape as the jupyter/vscode cases above). run.sh passes
+    # COMPUTE_V2_ROOTLESS=true so we don't have to re-detect it in here; rootful
+    # keeps the original s6 path. Crucially, reaching this point means the GCP
+    # credential/env block ABOVE has already run — activating the SA key and
+    # writing z-gcp.sh / Renviron.site — so the RStudio terminal and R sessions
+    # inherit GOOGLE_APPLICATION_CREDENTIALS + CLOUDSDK_PYTHON_SITEPACKAGES.
+    # (This logic used to live in run.sh via `--entrypoint bash`, which bypassed
+    # this whole script and left rstudio without any of that credential setup.)
+    if [ "${COMPUTE_V2_ROOTLESS:-}" = "true" ]; then
+        echo "auth-minimum-user-id=0" >> /etc/rstudio/rserver.conf
+        echo "root:${PASSWORD:-root}" | chpasswd
+        echo "rstudio:${PASSWORD:-rstudio}" | chpasswd
+        exec /usr/lib/rstudio-server/bin/rserver --server-daemonize 0
+    else
+        exec /init
+    fi
     ;;
   claude|claude-code)
     echo "Starting Claude Code..."
