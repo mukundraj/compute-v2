@@ -113,6 +113,18 @@ fi
 echo "CLOUDSDK_PYTHON_SITEPACKAGES=1" >> /usr/local/lib/R/etc/Renviron.site
 echo "export CLOUDSDK_PYTHON_SITEPACKAGES=1" >> /etc/profile.d/z-gcp.sh
 
+# If GOOGLE_APPLICATION_CREDENTIALS wasn't injected but the SA key is mounted at
+# the canonical in-container path, adopt it. run.sh's GCP_SERVICE_ACCOUNT_KEY
+# branch sets both the -v mount AND the -e env var, but a raw GCP_VOLUMES
+# override in config.local.env mounts the key WITHOUT the paired GCP_ENV,
+# leaving the var unset — gcloud then silently falls back to the VM's metadata
+# SA (the confusing "*-compute@developer" account). /run/secrets/gcp-key.json is
+# the fixed mount path everywhere in the repo, so defaulting to it makes the
+# mounted key activate regardless of which run.sh branch mounted it.
+if [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f /run/secrets/gcp-key.json ]; then
+    export GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp-key.json
+fi
+
 # Forward GCP credentials to all services (terminals + R sessions)
 if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
     echo "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> /usr/local/lib/R/etc/Renviron.site
