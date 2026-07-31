@@ -328,6 +328,17 @@ if podman ps --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; 
     exit 0
 fi
 
+# A container with this name can still exist in a NON-running state (exited or
+# "created") if a previous run was killed before podman's --rm cleanup fired —
+# OOM kill, host reboot, or a SIGKILL'd stop. The `podman ps` guard above only
+# sees RUNNING containers, so such a leftover slips past it and then collides at
+# `podman run --name` with 'the container name "ds-<svc>-<profile>" is already
+# in use ... use --replace'. Force-remove any stale same-named container first
+# so a stop+start (or a start after an unclean exit) always succeeds. No-op when
+# nothing is left over; the running case already returned above, so this never
+# removes a live container.
+podman rm -f "$CONTAINER_NAME" 2>/dev/null || true
+
 case "$SERVICE" in
     jupyter)
         echo "Starting JupyterLab (profile $PROFILE)..."
