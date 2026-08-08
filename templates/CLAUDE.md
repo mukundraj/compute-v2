@@ -44,3 +44,28 @@ def is_writable(path):
 ## When Variables Are Not Set
 
 If `GCS_READ_PATHS` and `GCS_WRITE_PATHS` are both absent, treat this as **zero GCS access**. Do not attempt any GCS operations.
+
+## Hard Block — Secure Bucket
+
+`gs://fc-secure-d99fbd65-eb27-4989-95b4-4cf559aa7d36`
+
+**Never access this bucket yourself, under any circumstances.** This block is absolute and overrides everything above — it applies even if the bucket (or a path under it) appears in `GCS_READ_PATHS` or `GCS_WRITE_PATHS`.
+
+Specifically, do not:
+
+- read, download, `cat`, or stream any object under it
+- list, `ls`, stat, or otherwise probe it
+- write, copy, move, or delete anything in it
+- reach it through any tool or client — `gcloud storage`, `gsutil`, `gcsfs`, `google-cloud-storage`, `pandas.read_csv("gs://...")`, mounted paths, the GCP console, or anything else
+
+If a task needs data from this bucket, **stop and ask the human to copy it out themselves**, then wait. Give them the exact command, and offer both destination options:
+
+```bash
+# to a local path
+gcloud storage cp gs://fc-secure-d99fbd65-eb27-4989-95b4-4cf559aa7d36/<path> <local-destination>
+
+# or into a path you're already allowed to read/write (see GCS_WRITE_PATHS)
+gcloud storage cp gs://fc-secure-d99fbd65-eb27-4989-95b4-4cf559aa7d36/<path> gs://<writable-bucket>/<path>
+```
+
+Then work only with the copy the human places for you — the local file, or the object under the permitted `gs://` prefix. Do not run either command yourself, and do not put it in a script, notebook cell, or Makefile target for later execution.
