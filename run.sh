@@ -231,6 +231,19 @@ APT_PACKAGES="${!_apt_var:-${APT_PACKAGES:-}}"
 # --security-opt=label=disable is needed on SELinux hosts (RHEL/Fedora); harmless elsewhere.
 GPU_ARGS=()
 if [ "${GPU_ENABLED:-false}" = "true" ]; then
+    # Self-heal the two things that break GPU passthrough after a host reboot,
+    # so a user launching a service doesn't hit a cryptic CDI error:
+    #   1. nvidia_uvm loads lazily -> /dev/nvidia-uvm may not exist yet. The CDI
+    #      spec references it, and podman stats it at container start, failing
+    #      with `failed to stat CDI host device "/dev/nvidia-uvm"`. Create it.
+    #   2. A stale/missing /etc/cdi/nvidia.yaml (e.g. after a driver upgrade)
+    #      -> regenerate. Both are best-effort; ignore failures (no sudo, no GPU).
+    if command -v nvidia-modprobe >/dev/null 2>&1; then
+        sudo -n nvidia-modprobe -u -c 0 >/dev/null 2>&1 || nvidia-modprobe -u -c 0 >/dev/null 2>&1 || true
+    fi
+    if [ ! -s /etc/cdi/nvidia.yaml ] && command -v nvidia-ctk >/dev/null 2>&1; then
+        sudo -n nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml >/dev/null 2>&1 || true
+    fi
     GPU_ARGS+=(--device nvidia.com/gpu=all
                --security-opt=label=disable)
 fi

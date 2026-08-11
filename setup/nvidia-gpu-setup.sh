@@ -31,10 +31,13 @@ set -euo pipefail
 # ---- Configurable ---------------------------------------------------------
 
 # Pin a known-good driver version. The .run installer for this version is
-# fetched directly from NVIDIA's downloads server. 570.x builds on Debian 13 /
-# kernel 6.12 and serves the image's CUDA 12.4 / PyTorch cu124 stack. To change
-# it, edit this value or override via the NVIDIA_DRIVER_VERSION env var.
-NVIDIA_DRIVER_VERSION="${NVIDIA_DRIVER_VERSION:-570.133.20}"
+# fetched directly from NVIDIA's downloads server. The 580 datacenter branch
+# builds on Debian 13 with the 6.12 stable-security kernels (6.12.100+ backported
+# a pci_resize_resource() signature change that the older 570.133.20 driver could
+# NOT compile against — do not downgrade below 580 on Debian 13). It supports the
+# T4 (Turing) and is forward-compatible with the image's older CUDA runtime. To
+# change it, edit this value or override via the NVIDIA_DRIVER_VERSION env var.
+NVIDIA_DRIVER_VERSION="${NVIDIA_DRIVER_VERSION:-580.126.20}"
 
 # ---- Helpers --------------------------------------------------------------
 
@@ -123,17 +126,27 @@ if ! command -v nvidia-smi >/dev/null 2>&1; then
 
     # Install kernel headers + DKMS so the driver module can build for
     # whatever kernel the cloud image is running.
+    #
+    # Install BOTH the versioned headers for the running kernel AND the flavour
+    # metapackage (e.g. linux-headers-cloud-amd64). The metapackage is
+    # load-bearing: without it, an unattended kernel upgrade pulls a new
+    # linux-image with no matching headers, DKMS silently can't rebuild the
+    # nvidia module, and the GPU breaks on the next reboot. The flavour is
+    # derived from the running kernel (e.g. 6.12.100+deb13-cloud-amd64 ->
+    # cloud-amd64) so this stays correct on both -cloud- and stock images.
     KERNEL="$(uname -r)"
-    log "Installing kernel headers (${KERNEL}), build-essential, dkms, pkg-config, libglvnd-dev..."
+    KERNEL_FLAVOUR="${KERNEL#*-}"   # strip "<version>-" prefix -> "cloud-amd64"
+    log "Installing kernel headers (${KERNEL} + linux-headers-${KERNEL_FLAVOUR} metapackage), build-essential, dkms, pkg-config, libglvnd-dev..."
     $SUDO apt-get update -y
     if ! $SUDO apt-get install -y \
         "linux-headers-${KERNEL}" \
+        "linux-headers-${KERNEL_FLAVOUR}" \
         build-essential \
         dkms \
         pkg-config \
         libglvnd-dev; then
-        warn "Could not install linux-headers-${KERNEL} directly."
-        warn "Trying meta-package linux-headers-${DPKG_ARCH}..."
+        warn "Could not install linux-headers-${KERNEL} / linux-headers-${KERNEL_FLAVOUR} directly."
+        warn "Trying arch meta-package linux-headers-${DPKG_ARCH}..."
         $SUDO apt-get install -y \
             "linux-headers-${DPKG_ARCH}" \
             build-essential \
@@ -248,8 +261,44 @@ else
     warn "Install Docker, then run: sudo nvidia-ctk runtime configure --runtime=docker"
 fi
 
-# ---- Generate CDI spec ---------------------------------------------------
+# ---- Boot-time module load + /dev/nvidia-uvm ------------------------------
+#
+# The base nvidia module loads at boot, but nvidia_uvm loads LAZILY — its device
+# node /dev/nvidia-uvm isn't created until the first CUDA client runs (or
+# nvidia-modprobe -u is called). The CDI spec below hardcodes /dev/nvidia-uvm,
+# and podman stats every listed node at container start; so on a freshly booted
+# GPU VM where nothing has touched CUDA yet, `--device nvidia.com/gpu=all` fails
+# with `failed to stat CDI host device "/dev/nvidia-uvm"`. GPU VMs reboot often
+# (GCE requires on_host_maintenance=TERMINATE), so install a oneshot unit that
+# loads the modules and creates the uvm node on every boot, before any workload.
+log "Installing boot-time NVIDIA module-load unit (compute-v2-nvidia-uvm.service)..."
+$SUDO tee /etc/systemd/system/compute-v2-nvidia-uvm.service >/dev/null <<'EOF'
+[Unit]
+Description=Load NVIDIA modules and create /dev/nvidia-uvm at boot
+After=local-fs.target
+ConditionPathExistsGlob=/dev/nvidia*
 
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# ConditionPathExistsGlob only checks that the base nvidia node exists; loading
+# nvidia_uvm and creating its node is still needed. `-` prefixes make failures
+# non-fatal (e.g. no GPU attached after a machine-type change).
+ExecStart=-/sbin/modprobe nvidia
+ExecStart=-/sbin/modprobe nvidia_uvm
+ExecStart=-/usr/bin/nvidia-modprobe -u -c 0
+
+[Install]
+WantedBy=multi-user.target
+EOF
+$SUDO systemctl daemon-reload
+$SUDO systemctl enable --now compute-v2-nvidia-uvm.service || \
+    warn "Could not enable compute-v2-nvidia-uvm.service."
+
+# ---- Generate CDI spec ---------------------------------------------------
+#
+# Runs AFTER the uvm node is created above, so the spec enumerates
+# /dev/nvidia-uvm and podman can inject it. Regenerate after any driver upgrade.
 log "Generating CDI spec at /etc/cdi/nvidia.yaml..."
 $SUDO mkdir -p /etc/cdi
 $SUDO nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml || \
