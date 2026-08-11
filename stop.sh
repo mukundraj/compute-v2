@@ -16,7 +16,7 @@ set +a
 PROFILE="${1:-}"
 
 if [ -z "$PROFILE" ]; then
-    echo "Usage: ./stop.sh [a|b|all] [jupyter|rstudio|vscode|claude|bash]"
+    echo "Usage: ./stop.sh [profile|all] [jupyter|rstudio|vscode|claude|bash]"
     exit 1
 fi
 SERVICE="${2:-}"
@@ -37,23 +37,21 @@ stop_profile() {
     fi
 }
 
+# Every profile defined via R_VERSION_<X> in config.env/config.local.env, so
+# `stop all` also targets user-defined profiles. Matches build.sh's helper.
+list_profiles() { compgen -v | sed -n 's/^R_VERSION_\([A-Z0-9]*\)$/\1/p' | tr '[:upper:]' '[:lower:]'; }
+
 case "$PROFILE" in
-    a)
-        stop_profile a
-        ;;
-    b)
-        stop_profile b
-        ;;
     all)
         if [ -n "$SERVICE" ]; then
-            for p in a b; do stop_container "ds-${SERVICE}-${p}"; done
+            for p in $(list_profiles); do stop_container "ds-${SERVICE}-${p}"; done
         else
-            for p in a b; do stop_profile "$p"; done
+            for p in $(list_profiles); do stop_profile "$p"; done
         fi
         ;;
     *)
-        echo "Usage: ./stop.sh [a|b|all] [jupyter|rstudio|vscode|claude|bash]"
-        exit 1
+        # Any profile name; stopping a container that isn't running is a no-op.
+        stop_profile "$PROFILE"
         ;;
 esac
 

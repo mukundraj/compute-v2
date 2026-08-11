@@ -23,13 +23,23 @@ if ! denv_healthy; then
         rm -rf /opt/conda/envs/denv
     fi
     echo "First run: creating denv (this takes a few minutes)..."
-    micromamba create -n denv -y \
-        python="${PYTHON_VERSION}" \
-        jupyterlab notebook ipykernel numpy pandas matplotlib scikit-learn \
-        google-cloud-sdk google-cloud-storage google-crc32c gcsfs
-    micromamba run -n denv pip install --no-cache-dir \
-        torch torchvision \
-        --index-url https://download.pytorch.org/whl/cu124
+    # Mirror the Containerfile's LIGHTWEIGHT split (LIGHTWEIGHT is baked into the
+    # image ENV): the lite image never had the scientific stack or torch, so the
+    # persistent ds-conda-envs-<profile> volume must not resurrect them here.
+    if [ "${LIGHTWEIGHT:-false}" = "true" ]; then
+        micromamba create -n denv -y \
+            python="${PYTHON_VERSION}" \
+            jupyterlab notebook ipykernel \
+            google-cloud-sdk google-cloud-storage google-crc32c gcsfs
+    else
+        micromamba create -n denv -y \
+            python="${PYTHON_VERSION}" \
+            jupyterlab notebook ipykernel numpy pandas matplotlib scikit-learn \
+            google-cloud-sdk google-cloud-storage google-crc32c gcsfs
+        micromamba run -n denv pip install --no-cache-dir \
+            torch torchvision \
+            --index-url https://download.pytorch.org/whl/cu124
+    fi
     micromamba run -n denv python -m ipykernel install \
         --name denv --display-name "Python (denv)" --sys-prefix
     # Re-register the R Jupyter kernel into the freshly-recreated denv share

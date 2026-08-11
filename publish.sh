@@ -24,7 +24,10 @@
 #
 # Must run on a Linux x86_64 host with podman (build.sh builds --platform
 # linux/amd64). Usage:
-#   ./publish.sh [a|b|all] [--skip-build]
+#   ./publish.sh [a|b|all|lite] [--skip-build]
+#     lite           build + publish the lightweight reference image
+#                    (ds-env-lite-r<LITE_REF_R_VERSION>-py<LITE_REF_PYTHON_VERSION>),
+#                    which bake_compute_v2.yml loads into the shared store
 #     --skip-build   upload an already-built local image (skip ./build.sh)
 set -euo pipefail
 
@@ -43,9 +46,9 @@ PROFILE=all
 SKIP_BUILD=false
 for arg in "$@"; do
     case "$arg" in
-        a|b|all)      PROFILE="$arg" ;;
+        a|b|all|lite) PROFILE="$arg" ;;
         --skip-build) SKIP_BUILD=true ;;
-        *) echo "Usage: ./publish.sh [a|b|all] [--skip-build]" >&2; exit 1 ;;
+        *) echo "Usage: ./publish.sh [a|b|all|lite] [--skip-build]" >&2; exit 1 ;;
     esac
 done
 
@@ -113,9 +116,11 @@ EOF
 
 TAG_A="$(tag_for "$R_VERSION_A" "$PYTHON_VERSION_A")"
 TAG_B="$(tag_for "$R_VERSION_B" "$PYTHON_VERSION_B")"
+TAG_LITE="ds-env-lite-r${LITE_REF_R_VERSION}-py${LITE_REF_PYTHON_VERSION}"
 case "$PROFILE" in
     a) publish_one "$TAG_A" ;;
     b) publish_one "$TAG_B" ;;
+    lite) publish_one "$TAG_LITE" ;;
     all)
         publish_one "$TAG_A"
         if [ "$TAG_B" != "$TAG_A" ]; then

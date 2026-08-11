@@ -7,6 +7,15 @@ ARG PYTHON_VERSION=3.12
 ENV R_VERSION=${R_VERSION}
 ENV PYTHON_VERSION=${PYTHON_VERSION}
 
+# LIGHTWEIGHT=true builds a stripped image: only R + Python + the machinery the
+# three IDEs need (JupyterLab/ipykernel, IRkernel + R languageserver,
+# code-server, Claude Code) + gcloud SDK. It SKIPS CUDA/cuDNN, PyTorch, the
+# scientific-Python stack (numpy/pandas/matplotlib/scikit-learn) and the heavy R
+# stack (tidyverse/Seurat/Bioconductor). Baked as an ENV so entrypoint.sh can
+# mirror the split when it repopulates the ds-conda-envs-<profile> volume.
+ARG LIGHTWEIGHT=false
+ENV LIGHTWEIGHT=${LIGHTWEIGHT}
+
 # ---------- micromamba (Python only) ----------
 ENV MAMBA_ROOT_PREFIX=/opt/conda
 ENV PATH=$MAMBA_ROOT_PREFIX/bin:$PATH
@@ -29,7 +38,8 @@ RUN apt-get update && apt-get install -y curl bzip2 ca-certificates libzmq3-dev 
 # CUDA runtime, so the apt version only matters for ad-hoc CUDA work — forward
 # compat against the host driver handles it.
 ARG CUDA_VERSION=12-6
-RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
+RUN if [ "$LIGHTWEIGHT" != "true" ]; then \
+    curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb \
       -o /tmp/cuda-keyring.deb && \
     dpkg -i /tmp/cuda-keyring.deb && rm /tmp/cuda-keyring.deb && \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -38,7 +48,8 @@ RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu24
       cuda-libraries-${CUDA_VERSION} \
       libcudnn9-cuda-12 \
       libnccl2 && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* ; \
+    fi
 
 ENV PATH=/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
@@ -50,15 +61,22 @@ RUN micromamba create -n denv -y \
       python=${PYTHON_VERSION} && \
     micromamba clean --all --yes
 
+# Essential: the Jupyter machinery all three IDEs need (kept in lite too).
 RUN micromamba install -n denv -y \
       jupyterlab \
       notebook \
-      ipykernel \
+      ipykernel && \
+    micromamba clean --all --yes
+
+# Heavy scientific-Python stack — skipped in the lightweight image.
+RUN if [ "$LIGHTWEIGHT" != "true" ]; then \
+    micromamba install -n denv -y \
       numpy \
       pandas \
       matplotlib \
       scikit-learn && \
-    micromamba clean --all --yes
+    micromamba clean --all --yes ; \
+    fi
 
 RUN micromamba install -n denv -y \
       google-cloud-sdk \
@@ -67,10 +85,12 @@ RUN micromamba install -n denv -y \
       gcsfs && \
     micromamba clean --all --yes
 
-# ---------- PyTorch with CUDA 12.4 wheels ----------
-RUN micromamba run -n denv pip install --no-cache-dir \
+# ---------- PyTorch with CUDA 12.4 wheels (skipped in lightweight) ----------
+RUN if [ "$LIGHTWEIGHT" != "true" ]; then \
+    micromamba run -n denv pip install --no-cache-dir \
       torch torchvision \
-      --index-url https://download.pytorch.org/whl/cu124
+      --index-url https://download.pytorch.org/whl/cu124 ; \
+    fi
 
 ENV PATH=$MAMBA_ROOT_PREFIX/envs/denv/bin:$PATH
 
@@ -82,24 +102,35 @@ ENV PATH=$MAMBA_ROOT_PREFIX/envs/denv/bin:$PATH
 ENV CLOUDSDK_PYTHON_SITEPACKAGES=1
 
 # ---------- R packages (using rocker's system R) ----------
-RUN R -e "install.packages(c('tidyverse', 'IRkernel', 'languageserver', \
-                             'ggplot2', 'cowplot', \
-                             'qs2','viridis', \
-                             'rstudioapi', \
+# Essential: the R Jupyter kernel + language server the IDEs need (kept in lite).
+RUN R -e "install.packages(c('IRkernel', 'languageserver'), \
+                             repos='https://p3m.dev/cran/__linux__/noble/latest', \
+                             Ncpus=8L)"
+
+# Heavy R stack (tidyverse / Seurat / Bioconductor) — skipped in lightweight.
+RUN if [ "$LIGHTWEIGHT" != "true" ]; then \
+    R -e "install.packages(c('tidyverse', 'ggplot2', 'cowplot', \
+                             'qs2','viridis', 'rstudioapi', \
                              'Seurat', 'SeuratObject', \
                              'BiocManager', 'renv', 'tidyr', \
                              'anndata'), \
                              repos='https://p3m.dev/cran/__linux__/noble/latest', \
-                             Ncpus=8L)"
-
-RUN R -e "BiocManager::install(c('GenomicRanges', 'SummarizedExperiment', 'DESeq2', 'fgsea', 'zellkonverter'), ask = FALSE)"
+                             Ncpus=8L)" && \
+    R -e "BiocManager::install(c('GenomicRanges', 'SummarizedExperiment', 'DESeq2', 'fgsea', 'zellkonverter'), ask = FALSE)" ; \
+    fi
 
 # ---------- verify R packages ----------
-RUN R -e "pkgs <- c('tidyverse','IRkernel','languageserver','ggplot2','cowplot','qs2','viridis', \
+# Essential kernel/LSP always; the heavy set only when it was installed.
+RUN R -e "pkgs <- c('IRkernel','languageserver'); \
+          missing <- pkgs[!sapply(pkgs, requireNamespace, quietly=TRUE)]; \
+          if(length(missing)) stop('Missing R packages: ', paste(missing, collapse=', '))"
+RUN if [ "$LIGHTWEIGHT" != "true" ]; then \
+    R -e "pkgs <- c('tidyverse','ggplot2','cowplot','qs2','viridis', \
                      'rstudioapi','Seurat','SeuratObject','BiocManager','renv','tidyr', \
                      'anndata','GenomicRanges','SummarizedExperiment','DESeq2','fgsea','zellkonverter'); \
           missing <- pkgs[!sapply(pkgs, requireNamespace, quietly=TRUE)]; \
-          if(length(missing)) stop('Missing R packages: ', paste(missing, collapse=', '))"
+          if(length(missing)) stop('Missing R packages: ', paste(missing, collapse=', '))" ; \
+    fi
 
 # ---------- kernel specs ----------
 RUN micromamba run -n denv python -m ipykernel install \

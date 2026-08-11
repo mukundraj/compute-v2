@@ -72,6 +72,12 @@ chmod +x build.sh run.sh stop.sh status.sh
 ./run.sh a rstudio &
 ./run.sh b rstudio &
 
+# Point an IDE at a specific host directory (mounted at WORK_MOUNT, i.e. the
+# same /home/workdir the IDE opens — only the backing host dir changes). Takes
+# effect on a fresh start; stop + re-run to change it. Prefer absolute paths.
+./run.sh a jupyter -w /path/to/project
+./run.sh a rstudio --workdir /path/to/project
+
 # Claude Code
 ./run.sh a claude
 
@@ -159,17 +165,42 @@ edit `run.sh` and change:
 -v ./work-${PROFILE}:/home/rstudio/work:Z
 ```
 
-## Adding a third profile
+## Adding a profile
 
-1. Add to `config.env`:
-   ```bash
-   R_VERSION_C=4.2.3
-   PYTHON_VERSION_C=3.10
-   JUPYTER_PORT_C=8890
-   RSTUDIO_PORT_C=8789
-   VSCODE_PORT_C=8905
-   ```
-2. Add a `c)` case to `build.sh`, `run.sh`, `stop.sh`, and `status.sh`
+Profiles beyond A/B are **data-driven** — define them in `config.env` (shared)
+or your untracked machine-local `config.local.env` and they work immediately; no
+`case` edits to `build.sh`/`run.sh`/`stop.sh` are needed.
+
+```bash
+# In config.env or config.local.env — ports optional (default auto):
+R_VERSION_C=4.2.3
+PYTHON_VERSION_C=3.10
+# JUPYTER_PORT_C=auto
+# RSTUDIO_PORT_C=auto
+# VSCODE_PORT_C=auto
+```
+
+Then `./build.sh c` (skip if the resulting `ds-env-r<R>-py<PY>` image already
+exists — e.g. same versions as A) and `./run.sh c rstudio` (or `rstudio -p c`
+with the shell shortcuts). `./build.sh all` builds every defined profile;
+`./stop.sh all` stops them all.
+
+### Lightweight profiles
+
+Add `LIGHTWEIGHT_<X>=true` to build/use a stripped `ds-env-lite-*` image — only
+R + Python + the IDE machinery (JupyterLab/ipykernel, IRkernel + R
+`languageserver`, code-server, Claude Code) + gcloud SDK, with **no** CUDA,
+PyTorch, scientific-Python (numpy/pandas/matplotlib/scikit-learn), or
+tidyverse/Seurat/Bioconductor. All three IDEs still work; the image builds fast
+and stays small.
+
+```bash
+R_VERSION_D=4.4.3
+PYTHON_VERSION_D=3.12
+LIGHTWEIGHT_D=true
+```
+
+Then `./build.sh d` and `./run.sh d rstudio`.
 
 ## Available versions
 

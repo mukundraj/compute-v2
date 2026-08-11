@@ -49,6 +49,7 @@ set +a
 # the (system RAM - 2G) ceiling below still applies.
 RESET_ENV=false
 MEMORY_FLAG=""
+WORKDIR_FLAG=""
 POSITIONAL=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -60,6 +61,16 @@ while [ $# -gt 0 ]; do
             fi
             MEMORY_FLAG="$2"; shift ;;
         --memory=*) MEMORY_FLAG="${1#--memory=}" ;;
+        # -w/--workdir <dir> overrides WORK_DIR (the host dir bind-mounted at
+        # WORK_MOUNT) for this launch. Applied below, after config is sourced.
+        -w|--workdir)
+            if [ $# -lt 2 ]; then
+                echo "Error: -w/--workdir requires a value (e.g. -w /mnt/disks/home/mrajai/proj)" >&2
+                exit 1
+            fi
+            WORKDIR_FLAG="$2"; shift ;;
+        --workdir=*) WORKDIR_FLAG="${1#--workdir=}" ;;
+        -w=*)        WORKDIR_FLAG="${1#-w=}" ;;
         *) POSITIONAL+=("$1") ;;
     esac
     shift
@@ -67,26 +78,27 @@ done
 PROFILE=${POSITIONAL[0]:-a}
 SERVICE=${POSITIONAL[1]:-jupyter}
 
-case "$PROFILE" in
-    a)
-        R_VERSION=$R_VERSION_A
-        PYTHON_VERSION=$PYTHON_VERSION_A
-        JUPYTER_PORT=$JUPYTER_PORT_A
-        RSTUDIO_PORT=$RSTUDIO_PORT_A
-        VSCODE_PORT=$VSCODE_PORT_A
-        ;;
-    b)
-        R_VERSION=$R_VERSION_B
-        PYTHON_VERSION=$PYTHON_VERSION_B
-        JUPYTER_PORT=$JUPYTER_PORT_B
-        RSTUDIO_PORT=$RSTUDIO_PORT_B
-        VSCODE_PORT=$VSCODE_PORT_B
-        ;;
-    *)
-        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode] [--reset-env] [--memory <size>]"
-        exit 1
-        ;;
-esac
+# Resolve the profile's settings by variable indirection on an uppercased
+# suffix (same pattern as APT_PACKAGES_<A|B> below), so ANY profile defined via
+# R_VERSION_<X>/PYTHON_VERSION_<X> in config.env OR the user's config.local.env
+# is launchable — no hardcoded a/b list. Ports default to "auto" when a profile
+# omits them, so a user-defined profile needs only the two version vars.
+# LIGHTWEIGHT_<X>=true selects the stripped ds-env-lite image (see IMAGE below).
+PROFILE_UC=$(echo "$PROFILE" | tr '[:lower:]' '[:upper:]')
+_rvar="R_VERSION_${PROFILE_UC}"
+_pyvar="PYTHON_VERSION_${PROFILE_UC}"
+if [ -z "${!_rvar:-}" ] || [ -z "${!_pyvar:-}" ]; then
+    echo "Error: profile '$PROFILE' is not defined." >&2
+    echo "Add R_VERSION_${PROFILE_UC} and PYTHON_VERSION_${PROFILE_UC} to config.local.env (or config.env)." >&2
+    echo "Usage: ./run.sh [profile] [jupyter|rstudio|claude|bash|vscode] [--reset-env] [--memory <size>] [-w <workdir>]"
+    exit 1
+fi
+R_VERSION="${!_rvar}"
+PYTHON_VERSION="${!_pyvar}"
+_jvar="JUPYTER_PORT_${PROFILE_UC}"; JUPYTER_PORT="${!_jvar:-auto}"
+_rsvar="RSTUDIO_PORT_${PROFILE_UC}"; RSTUDIO_PORT="${!_rsvar:-auto}"
+_vsvar="VSCODE_PORT_${PROFILE_UC}"; VSCODE_PORT="${!_vsvar:-auto}"
+_ltvar="LIGHTWEIGHT_${PROFILE_UC}"; LIGHTWEIGHT="${!_ltvar:-false}"
 
 if [ "$RESET_ENV" = "true" ]; then
     CONTAINER_NAME="ds-${SERVICE}-${PROFILE}"
@@ -117,8 +129,28 @@ pick_port() {
 [[ "$RSTUDIO_PORT"  == "auto" ]] && RSTUDIO_PORT=$(pick_port)
 [[ "$VSCODE_PORT"   == "auto" ]] && VSCODE_PORT=$(pick_port)
 
-IMAGE="ds-env-r${R_VERSION}-py${PYTHON_VERSION}"
+# Lightweight profiles run a distinct, stripped image tag (no CUDA / no
+# scientific-Python / no torch / no heavy-R), so a lite and a full profile at
+# the same R/Python versions never collide on one image.
+if [ "$LIGHTWEIGHT" = "true" ]; then
+    IMAGE="ds-env-lite-r${R_VERSION}-py${PYTHON_VERSION}"
+else
+    IMAGE="ds-env-r${R_VERSION}-py${PYTHON_VERSION}"
+fi
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+
+# -w/--workdir overrides WORK_DIR (sourced from config.env) for this launch.
+# WORK_MOUNT (the in-container path) is unchanged, so the IDE still opens
+# /home/workdir — only the backing host dir changes. Relative paths resolve
+# against the interactive cwd via CALLER_PWD (like GCP_SERVICE_ACCOUNT_KEY
+# below), since the ansible wrapper cd's into ~/.compute-v2 first.
+if [ -n "${WORKDIR_FLAG:-}" ]; then
+    case "$WORKDIR_FLAG" in
+        /*)   WORK_DIR="$WORKDIR_FLAG" ;;
+        "~"*) WORK_DIR=$(eval echo "$WORKDIR_FLAG") ;;
+        *)    WORK_DIR="${CALLER_PWD:-$PWD}/$WORKDIR_FLAG" ;;
+    esac
+fi
 mkdir -p "${WORK_DIR}"
 
 COMMON_VOLUMES=(
@@ -461,7 +493,7 @@ case "$SERVICE" in
         fi
         ;;
     *)
-        echo "Usage: ./run.sh [a|b] [jupyter|rstudio|claude|bash|vscode] [--reset-env] [--memory <size>]"
+        echo "Usage: ./run.sh [profile] [jupyter|rstudio|claude|bash|vscode] [--reset-env] [--memory <size>] [-w <workdir>]"
         exit 1
         ;;
 esac
