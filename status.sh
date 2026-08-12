@@ -51,21 +51,23 @@ if [ -n "$running" ]; then
 
     # VS Code Server needs a localhost origin (the browser sends Origin:
     # http://<remote>:port and code-server rejects it as cross-origin), so
-    # mirror the "ssh -L" + browser hint that run.sh prints at first start
-    # for any running ds-vscode-* container. Only emitted when a public IP
-    # resolved; without it the tunnel command can't be constructed.
-    if [ -n "$PUBLIC_IP" ]; then
+    # mirror the tunnel hint that run.sh prints at first start for any running
+    # ds-vscode-* container. Print a `gcloud compute ssh` command rather than
+    # raw `ssh …@IP`: it resolves the VM by name (survives ephemeral-IP churn)
+    # and authenticates via OS Login. GCE metadata gives us name/zone/project;
+    # unlike the raw-ssh form it needs no PUBLIC_IP.
+    _gce() { curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+        "http://metadata.google.internal/computeMetadata/v1/$1" 2>/dev/null; }
+    GCE_NAME=$(_gce instance/name)
+    GCE_ZONE=$(_gce instance/zone); GCE_ZONE=${GCE_ZONE##*/}   # strip projects/NUM/zones/ prefix
+    GCE_PROJECT=$(_gce project/project-id)
+    if [ -n "$GCE_NAME" ] && [ -n "$GCE_ZONE" ] && [ -n "$GCE_PROJECT" ]; then
         while IFS=$'\t' read -r name ports; do
             [[ "$name" == ds-vscode-* ]] || continue
             host_port=$(echo "$ports" | grep -oE '0\.0\.0\.0:[0-9]+' | head -1 | cut -d: -f2)
             [ -n "$host_port" ] || continue
             echo "${name}: to connect from your laptop —"
-            # SUDO_USER survives `sudo -i` via sudo's default env_keep, so when
-            # status.sh runs under the ansible wrapper's auto-redirect
-            # (`sudo -iu <name>ai status vscode`) we still print the original
-            # human's username — the one that's actually SSH-reachable via OS
-            # Login. Falls back to whoami for direct (non-sudo) invocations.
-            echo "  ssh -N -L ${host_port}:localhost:${host_port} ${SUDO_USER:-$(whoami)}@${PUBLIC_IP}"
+            echo "  gcloud compute ssh ${GCE_NAME} --zone=${GCE_ZONE} --project=${GCE_PROJECT} -- -N -L ${host_port}:localhost:${host_port}"
             echo "Then open in your browser:"
             echo "  http://localhost:${host_port}"
             echo ""

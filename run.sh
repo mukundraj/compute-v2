@@ -479,16 +479,21 @@ case "$SERVICE" in
             "${IMAGE}" vscode
         echo "VS Code Server → http://${HOST_IP}:${VSCODE_PORT} (local)"
         [[ -n "$PUBLIC_IP" ]] && echo "VS Code Server → http://${PUBLIC_IP}:${VSCODE_PORT} (public)"
-        if [[ -n "$PUBLIC_IP" ]]; then
+        # code-server rejects a non-localhost Origin, so the browser must reach it
+        # over a localhost tunnel. Print a `gcloud compute ssh` command rather than
+        # raw `ssh …@IP`: it resolves the VM by name (survives ephemeral-IP churn)
+        # and authenticates via OS Login (no "too many authentication failures" from
+        # an unregistered/over-offered key). GCE metadata gives us name/zone/project.
+        _gce() { curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+            "http://metadata.google.internal/computeMetadata/v1/$1" 2>/dev/null; }
+        GCE_NAME=$(_gce instance/name)
+        GCE_ZONE=$(_gce instance/zone); GCE_ZONE=${GCE_ZONE##*/}   # strip projects/NUM/zones/ prefix
+        GCE_PROJECT=$(_gce project/project-id)
+        if [[ -n "$GCE_NAME" && -n "$GCE_ZONE" && -n "$GCE_PROJECT" ]]; then
             echo ""
-            echo "First, enter this in your laptop terminal:"
-            # SUDO_USER survives `sudo -i` via sudo's default env_keep, so when
-            # run.sh runs under the ansible wrapper's auto-redirect
-            # (`sudo -iu <name>ai vscode`) we still print the original human's
-            # username — the one that's actually SSH-reachable via OS Login.
-            # Falls back to whoami for direct (non-sudo) invocations.
-            echo "  ssh -N -L ${VSCODE_PORT}:localhost:${VSCODE_PORT} ${SUDO_USER:-$(whoami)}@${PUBLIC_IP}"
-            echo "Then, enter this in your browser:"
+            echo "First, run this in your laptop terminal (needs gcloud + access to the VM):"
+            echo "  gcloud compute ssh ${GCE_NAME} --zone=${GCE_ZONE} --project=${GCE_PROJECT} -- -N -L ${VSCODE_PORT}:localhost:${VSCODE_PORT}"
+            echo "Then open in your browser:"
             echo "  http://localhost:${VSCODE_PORT}"
         fi
         ;;
