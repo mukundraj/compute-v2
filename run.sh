@@ -281,10 +281,22 @@ if [ "${GPU_ENABLED:-false}" = "true" ]; then
 fi
 
 # ---- Container memory limit ----
-# Hard ceiling: total system RAM minus 2G host headroom. "auto" (the
-# config.env default) resolves to exactly that ceiling; an explicit value
-# (--memory flag > CONTAINER_MEMORY in config.local.env > config.env) is
-# capped to it, with a message, so a container can never starve the host.
+# Hard ceiling: a fixed gap below the TIGHTEST memory limit of any cgroup we are
+# nested in, falling back to total RAM minus 2G host headroom when there is no
+# cgroup limit at all. "auto" (the config.env default) resolves to that ceiling;
+# an explicit value (--memory flag > CONTAINER_MEMORY in config.local.env >
+# config.env) is capped to it, with a message, so a container can never starve
+# the host.
+#
+# Deriving from the cgroup rather than from MemTotal is the point. Previously
+# this computed MemTotal-2GiB independently of the enclosing user-<uid>.slice,
+# whose own cap was computed as floor(MemTotal_GiB)-2 -- so this ceiling landed
+# ABOVE the slice's by (MemTotal_MiB mod 1024), i.e. on every real machine,
+# since no MemTotal is a whole number of GiB. The container limit was therefore
+# unreachable, leaving the slice's MemoryHigh as the only active limit; and
+# MemoryHigh THROTTLES rather than kills, so a runaway ground the whole host on
+# reclaim for days instead of being OOM-killed. Reading the live cgroup makes
+# the ordering correct by construction instead of by two formulas agreeing.
 mem_to_mib() {
     local v num unit
     v=$(echo "$1" | tr '[:lower:]' '[:upper:]')
@@ -310,19 +322,62 @@ if [[ "$(uname)" == "Darwin" ]]; then
 else
     TOTAL_MIB=$(( $(awk '/^MemTotal:/{print $2}' /proc/meminfo) / 1024 ))
 fi
+
+# Tightest memory limit of any cgroup we are nested in, in MiB (empty if none).
+cgroup_mem_ceiling_mib() {
+    local rel lim tightest="" f base=/sys/fs/cgroup
+    [ -r /proc/self/cgroup ] || return 0
+    rel=$(awk -F: '$1=="0"{print $3}' /proc/self/cgroup 2>/dev/null)
+    [ -n "$rel" ] || return 0
+    while : ; do
+        for f in memory.max memory.high; do
+            lim=$(cat "${base}${rel%/}/${f}" 2>/dev/null) || continue
+            [ "$lim" = max ] && continue
+            case "$lim" in ''|*[!0-9]*) continue ;; esac
+            lim=$(( lim / 1048576 ))
+            if [ -z "$tightest" ] || [ "$lim" -lt "$tightest" ]; then tightest=$lim; fi
+        done
+        [ "$rel" = / ] && break
+        rel=$(dirname "$rel")
+    done
+    [ -n "$tightest" ] && echo "$tightest"
+    return 0
+}
+
+# Unmanaged fallback: no cgroup limit above us, i.e. macOS or a VM whose slice
+# caps were deliberately set to none. Unchanged from historical behaviour.
 CAP_MIB=$(( TOTAL_MIB - 2048 ))
+CGROUP_MIB=$(cgroup_mem_ceiling_mib)
+if [ -n "$CGROUP_MIB" ]; then
+    # Sit a fixed gap below the parent so podman OOMs THIS container before the
+    # slice starts throttling everything in it. The gap only has to cover the
+    # slice's non-container residents (login shell, systemd --user, dbus, conmon,
+    # the pause container) -- measured at ~260 MiB, so 1 GiB is ample. A
+    # percentage here would scale the gap with the machine for no reason and
+    # widen the throttle zone this change exists to escape.
+    GAP_MIB=$(( CGROUP_MIB * 2 / 100 ))
+    [ "$GAP_MIB" -lt 256 ]  && GAP_MIB=256
+    [ "$GAP_MIB" -gt 1024 ] && GAP_MIB=1024
+    SLICE_CAP_MIB=$(( CGROUP_MIB - GAP_MIB ))
+    [ "$SLICE_CAP_MIB" -lt "$CAP_MIB" ] && CAP_MIB=$SLICE_CAP_MIB
+fi
 MEM_REQ="${MEMORY_FLAG:-${CONTAINER_MEMORY:-auto}}"
 MEM_ARGS=()
 if [ "$CAP_MIB" -le 0 ]; then
     echo "Warning: system RAM ($(mib_to_human "$TOTAL_MIB")) leaves nothing below the 2G host headroom — skipping container memory limit." >&2
 else
+    if [ -n "$CGROUP_MIB" ]; then
+        CAP_WHY="$(mib_to_human "$GAP_MIB") below this user's slice limit of $(mib_to_human "$CGROUP_MIB")"
+    else
+        CAP_WHY="system RAM $(mib_to_human "$TOTAL_MIB") minus 2G host headroom; no cgroup limit found"
+    fi
     if [ "$MEM_REQ" = "auto" ]; then
         MEM_MIB=$CAP_MIB
-        echo "Container memory limit: $(mib_to_human "$MEM_MIB") (system RAM $(mib_to_human "$TOTAL_MIB") minus 2G host headroom)"
+        echo "Container memory limit: $(mib_to_human "$MEM_MIB") (${CAP_WHY})"
     else
         MEM_MIB=$(mem_to_mib "$MEM_REQ") || exit 1
         if [ "$MEM_MIB" -gt "$CAP_MIB" ]; then
-            echo "Memory: requested ${MEM_REQ} exceeds system RAM ($(mib_to_human "$TOTAL_MIB")) minus 2G host headroom — capping to $(mib_to_human "$CAP_MIB")."
+            echo "Memory: requested ${MEM_REQ} exceeds the ceiling (${CAP_WHY}) — capping to $(mib_to_human "$CAP_MIB")."
             MEM_MIB=$CAP_MIB
         fi
         echo "Container memory limit: $(mib_to_human "$MEM_MIB")"
