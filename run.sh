@@ -323,12 +323,25 @@ else
     TOTAL_MIB=$(( $(awk '/^MemTotal:/{print $2}' /proc/meminfo) / 1024 ))
 fi
 
-# Tightest memory limit of any cgroup we are nested in, in MiB (empty if none).
+# Tightest memory limit of any cgroup above user-$(id -u).slice, in MiB (empty
+# if none).
+#
+# Anchored on `id -u` rather than on /proc/self/cgroup's literal path.
+# `sudo -iu <user>` -- what every human->AI redirect uses (the -u flag, the
+# `as` helper, or a bare manual `sudo -iu`) -- changes $HOME/$USER/the euid
+# but does NOT open a new systemd/logind session, so the CALLING shell's
+# cgroup stays wherever it already was: verified live, running `sudo -iu
+# <human>` from an operator's own session left the shell in the operator's
+# own user-<uid>.slice, not the target human's. Podman itself is unaffected
+# by that -- it talks to systemd directly to place the container's scope
+# under user-$(id -u).slice regardless of the calling shell's cgroup -- so
+# reading /proc/self/cgroup here could pick up a bystander's (often much
+# smaller human) slice cap instead of the slice the container is actually
+# about to land in. Anchoring on `id -u` matches podman's own placement.
 cgroup_mem_ceiling_mib() {
     local rel lim tightest="" f base=/sys/fs/cgroup
-    [ -r /proc/self/cgroup ] || return 0
-    rel=$(awk -F: '$1=="0"{print $3}' /proc/self/cgroup 2>/dev/null)
-    [ -n "$rel" ] || return 0
+    rel="/user.slice/user-$(id -u).slice"
+    [ -d "${base}${rel}" ] || return 0
     while : ; do
         for f in memory.max memory.high; do
             lim=$(cat "${base}${rel%/}/${f}" 2>/dev/null) || continue
